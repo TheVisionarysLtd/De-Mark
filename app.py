@@ -240,14 +240,30 @@ def _reference_frame(data: bytes, name: str):
     return None
 
 
-# Corner-zoom shows the bottom-right region (where watermarks sit) so a small
-# mark is big and easy to box. These are the crop's top-left offset as fractions.
-_ZOOM_X0, _ZOOM_Y0 = 0.50, 0.50
+def _preview_with_box(ref, cx, cy, bw, bh, zoom):
+    """Draw the removal box on a copy of ref (optionally zoomed to the corner),
+    downscaled for fast redraws. Returns a BGR array ready for st.image."""
+    h, w = ref.shape[:2]
+    out = ref.copy()
+    x0, y0 = int((cx - bw / 2) * w), int((cy - bh / 2) * h)
+    x1, y1 = int((cx + bw / 2) * w), int((cy + bh / 2) * h)
+    cv2.rectangle(out, (x0, y0), (x1, y1), (255, 90, 10), max(3, w // 220))
+    if zoom:
+        out = out[int(0.5 * h):, int(0.5 * w):]     # enlarge the bottom-right
+    oh, ow = out.shape[:2]
+    if ow > 1000:                                    # cap size so redraws stay snappy
+        out = cv2.resize(out, (1000, int(1000 * oh / ow)), interpolation=cv2.INTER_AREA)
+    return out
+
 
 def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
-    """Let the user mark the watermark on a big image, then remove exactly that box."""
-    ui.wide_mode()                          # use the full window width for the picker
-    ui.section("Point at the watermark")
+    """Manual override that works everywhere (phone + desktop + cloud): position a
+    box over the watermark with sliders and watch a live preview, then remove it.
+
+    (An earlier image-tap picker relied on a third-party component that fails on
+    Streamlit Cloud, so this uses only native widgets — reliable and touch-friendly.)
+    """
+    ui.section("Mark the watermark")
 
     ref = _reference_frame(data, name)
     if ref is None:
@@ -263,64 +279,31 @@ def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
         st.info(f"**{'PDF' if is_pdf else 'Video'}:** mark it once on this {kind} — it's "
                 f"removed from the **same spot in {where}**.")
 
-    # Tap works on phones AND desktops; drag is a mouse-only extra for desktop.
-    method = st.radio(
-        "How do you want to mark it?",
-        ["👆 Tap the watermark (works on phone)", "🖱️ Drag a box (desktop)"],
-        horizontal=True, key="pin_method")
-    drag = method.startswith("🖱️")
+    st.caption("Move the box over the watermark with the sliders — the **red box** in the "
+               "preview is exactly what gets removed — then press **Remove**. Works on phone "
+               "and desktop. (Watermarks are usually in the bottom-right, the default here.)")
 
-    zoom = st.toggle("🔍 Zoom to the bottom-right corner (easier for small marks)", value=True,
-                     key="pin_zoom")
-    box_side = 0.14
-    if not drag:
-        box_side = st.slider("Box size", 6, 40, 14, key="pin_size",
-                             help="Size of the area removed around your tap.") / 100.0
-        st.caption("**Tap the watermark** on the image, adjust **Box size** to cover it, "
-                   "then press **Remove**.")
-    else:
-        st.caption("**Drag a box** around the watermark, then press **Remove**.")
+    zoom = st.toggle("🔍 Zoom to the bottom-right corner", value=True, key="pin_zoom")
+    c1, c2, c3 = st.columns(3)
+    px = c1.slider("◀ Left · Right ▶", 0, 100, 92, key="pin_x") / 100.0
+    py = c2.slider("▲ Up · Down ▼", 0, 100, 93, key="pin_y") / 100.0
+    size = c3.slider("Box size", 4, 50, 14, key="pin_size") / 100.0
 
-    # Show either the whole frame or an enlarged bottom-right crop for precision.
-    x0f, y0f = (_ZOOM_X0, _ZOOM_Y0) if zoom else (0.0, 0.0)
-    view = ref[int(y0f * h):, int(x0f * w):]
-    try:
-        box = ui.pinpoint_box(view, key=f"pick_{files.sha1_bytes(data)[:10]}_{int(zoom)}_{int(drag)}",
-                              drag=drag)
-    except Exception:
-        st.warning("The visual picker couldn't load here. Please use **✨ Auto detect** above, "
-                   "or reload the page — and you can send us the file below so we can look into it.")
-        return
-    if box is None:
-        return
+    side = size * min(w, h)
+    cx, cy, bw, bh = px, py, side / w, side / h
 
-    # Map the mark (fractions of the shown view) back to full-image fractions.
-    cxv, cyv, bwv, bhv = box
-    span_x, span_y = 1.0 - x0f, 1.0 - y0f
-    cx, cy = x0f + cxv * span_x, y0f + cyv * span_y
-    if drag and bwv is not None:
-        bw, bh = bwv * span_x, bhv * span_y
-    else:                                   # tap: a square box of box_side * shorter side
-        side = box_side * min(w, h)
-        bw, bh = side / w, side / h
+    st.image(_preview_with_box(ref, cx, cy, bw, bh, zoom), channels="BGR",
+             use_container_width=True, caption="Red box = area that will be removed")
+
     manual = replace(settings, region_mode="manual", force_fill=True,
                      center_x=cx, center_y=cy, box_w=bw, box_h=bh)
 
-    px0, py0 = int((cx - bw / 2) * w), int((cy - bh / 2) * h)
-    px1, py1 = int((cx + bw / 2) * w), int((cy + bh / 2) * h)
-    preview = ref.copy()
-    cv2.rectangle(preview, (px0, py0), (px1, py1), (255, 90, 10), max(2, w // 300))
-
-    left, right = st.columns([3, 1])
-    left.image(preview, channels="BGR", use_container_width=True,
-               caption="Selected area (shown on the full image)")
-    go = right.button("Remove watermark", type="primary", use_container_width=True)
-
+    go = st.button("Remove watermark", type="primary", use_container_width=True)
     go_key = (files.sha1_bytes(data), manual.cache_key())
     if go:
         st.session_state["pin_go"] = go_key
     if st.session_state.get("pin_go") != go_key:
-        return                              # wait for the user to confirm the box
+        return                              # wait for the user to press Remove
 
     st.write("")
     if files.is_image(name):
@@ -415,11 +398,11 @@ def main() -> None:
             st.session_state.pop("demo", None); st.rerun()
 
     # Prominent, always-visible removal mode — never hidden in the sidebar.
+    # Select area uses native sliders (no third-party component), so it's always on.
     st.write("")
-    flow = ui.mode_control(ui.picker_available())
-    if ui.picker_available():
-        st.caption("**Auto detect** finds the watermark for you. If it misses, pick "
-                   "**Select area** and draw a box over the watermark yourself.")
+    flow = ui.mode_control(True)
+    st.caption("**Auto detect** finds the watermark for you. If it misses, pick "
+               "**Select area** and place a box over the watermark yourself.")
 
     st.write("")
     supported = files.is_image(name) or files.is_video(name) or files.is_pdf(name)
