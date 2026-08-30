@@ -15,7 +15,7 @@ import cv2
 import streamlit as st
 
 import ui
-from wmr import files, imaging, video
+from wmr import feedback, files, imaging, video
 from wmr.config import DEFAULT_CRF, RemovalSettings, ROI_BOTTOM_FRACTION, ROI_RIGHT_FRACTION
 from wmr.inpaint import lama_available
 from wmr.sparkle import sparkle_available
@@ -310,6 +310,41 @@ def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Disclaimer + one-click "report this file" to The Visionarys
+# --------------------------------------------------------------------------- #
+def report_widget(data: bytes, name: str) -> None:
+    """A disclaimer plus a one-click way to send a tricky file to the team."""
+    st.write("")
+    st.caption("⚠️ De:Mark cleans most files, but some tricky images or videos may not come "
+               "out perfectly. If yours didn't, try **✋ Select area** above — or send it to us "
+               "and we'll improve it.")
+
+    sent_key = f"reported_{files.sha1_bytes(data)}"
+    with st.expander("📤 Didn't work well? Send this file to The Visionarys"):
+        if st.session_state.get(sent_key):
+            st.success("Thanks — sent to The Visionarys. We'll take a look. 🙌")
+            return
+        note = st.text_input(
+            "What went wrong? (optional)",
+            placeholder="e.g. the watermark on the bottom-right wasn't removed",
+            key=f"note_{sent_key}")
+        st.caption(f"This sends **{name}** to The Visionarys ({feedback.REPORT_EMAIL}) so we can "
+                   "look at it and improve De:Mark. Nothing else is shared.")
+        if st.button("Send to The Visionarys", type="primary", key=f"send_{sent_key}"):
+            details = f"type={files.ext_of(name)}, size={len(data) / 1e6:.2f} MB"
+            with st.spinner("Sending…"):
+                ok, attached, err = feedback.send_report(name, data, note, details)
+            if ok:
+                st.session_state[sent_key] = True
+                extra = "" if attached else " (the file was too large to attach, but we got its details)"
+                st.success(f"Sent to The Visionarys — thank you!{extra}")
+                st.rerun()
+            else:
+                st.error(f"Couldn't send automatically ({err}). Please email {feedback.REPORT_EMAIL} "
+                         "with the file attached and we'll take a look.")
+
+
+# --------------------------------------------------------------------------- #
 # Demo samples
 # --------------------------------------------------------------------------- #
 def _demo_controls() -> None:
@@ -365,6 +400,7 @@ def main() -> None:
                    "**Select area** and draw a box over the watermark yourself.")
 
     st.write("")
+    supported = files.is_image(name) or files.is_video(name) or files.is_pdf(name)
     if flow == "pinpoint":
         render_pinpoint(data, name, settings)
     elif files.is_image(name):
@@ -375,6 +411,9 @@ def main() -> None:
         render_pdf(data, name, settings)
     else:
         st.error("Unsupported file type.")
+
+    if supported:
+        report_widget(data, name)
     ui.footer()
 
 
