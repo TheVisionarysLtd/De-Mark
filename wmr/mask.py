@@ -266,13 +266,17 @@ def pad_mask(mask: np.ndarray, padding_px: int) -> np.ndarray:
     return cv2.dilate(mask, kernel)
 
 
-# The 'Gemini Notebook' badge is WHITE strokes (icon + text). Verify the matched
-# region's stroke pixels are bright, desaturated, and stand out from the local
-# background — this is background-invariant, so it catches the badge on dark,
-# busy or light slides alike, and rejects dark table text / coloured content.
-_BADGE_TEXT_V_MIN = 150.0     # strokes are white -> high value
-_BADGE_TEXT_S_MAX = 95.0      # ...and low saturation
-_BADGE_TEXT_CONTRAST = 10.0   # ...and brighter than their immediate surround
+# The 'Gemini Notebook' badge is a constant logo (sparkle icon + text) that
+# NotebookLM renders in ADAPTIVE contrast: light strokes on dark slides, dark
+# strokes on light slides. Verify the matched region's stroke pixels are
+# desaturated (grey/white/black, never coloured) and stand out strongly from
+# their immediate surround in EITHER direction. This is background- and
+# polarity-invariant, so it catches the badge on dark, busy and light slides
+# alike, while still rejecting coloured artwork and low-contrast look-alikes.
+# (An earlier version required strokes to be *bright*; that silently dropped the
+# common dark-on-light badge on every pale slide — the whole point of this pass.)
+_BADGE_TEXT_S_MAX = 95.0      # strokes are desaturated (grey scale)
+_BADGE_TEXT_CONTRAST = 25.0   # ...and clearly separated from their surround (|Δ|)
 
 _BADGE_TEMPLATE = None
 _BADGE_LOADED = False
@@ -291,14 +295,17 @@ def _badge_template():
     return _BADGE_TEMPLATE
 
 
-def _badge_is_white_text(templ: np.ndarray, box_val: np.ndarray,
+def _badge_strokes_match(templ: np.ndarray, box_val: np.ndarray,
                          box_sat: np.ndarray) -> bool:
-    """True if the matched region's stroke pixels read as the white badge.
+    """True if the matched region's stroke pixels read as the Gemini badge logo.
 
     Uses the template's own high-alpha pixels (the icon + text strokes) to sample
-    the image: a real badge is bright + desaturated there and stands out from its
-    immediate surround. This holds on any background and rejects dark table text,
-    coloured artwork, or uniforms that merely share the badge's outline.
+    the image: a real badge is *desaturated* there (grey/white/black) and stands
+    out strongly from its immediate surround — either brighter (light badge on a
+    dark slide) or darker (dark badge on a pale slide). Checking |contrast| rather
+    than a fixed direction is what lets one detector handle both polarities, while
+    the saturation gate still rejects coloured artwork and uniforms that merely
+    share the badge's outline.
     """
     if box_val.shape != templ.shape or templ.max() <= 0:
         return False
@@ -309,42 +316,40 @@ def _badge_is_white_text(templ: np.ndarray, box_val: np.ndarray,
     v_on = float(box_val[on].mean())
     s_on = float(box_sat[on].mean())
     v_off = float(box_val[off].mean()) if off.any() else v_on
-    return (v_on >= _BADGE_TEXT_V_MIN and s_on <= _BADGE_TEXT_S_MAX
-            and (v_on - v_off) >= _BADGE_TEXT_CONTRAST)
+    return (s_on <= _BADGE_TEXT_S_MAX
+            and abs(v_on - v_off) >= _BADGE_TEXT_CONTRAST)
 
 
-def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float = 0.35,
-                      corr_thr: float = 0.42):
-    """Locate the fixed 'Gemini Notebook' badge by multi-scale template matching.
+_BADGE_SCALES = (0.6, 0.75, 0.9, 1.05, 1.25, 1.5)   # badge width as multiples of ~9.5% frame
 
-    The badge is a constant white graphic, so shape correlation finds its outline
-    regardless of slide colour, and a white-stroke check (``_badge_is_white_text``)
-    confirms each candidate. Matching alone was unreliable: a high threshold
-    missed the badge on dark/busy slides, while a low one fired on tables and
-    uniforms. Verifying the strokes are actually white fixes both — it catches the
-    badge on any background and rejects look-alikes. Returns a full-frame 0/255
-    mask (badge box filled) or None.
+
+def _badge_contrast(gray: np.ndarray) -> np.ndarray:
+    """Sign-agnostic local contrast map (bright- or dark-on-background strokes)."""
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    return cv2.max(cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, k),
+                   cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k)).astype(np.float32)
+
+
+def _search_badge(frame_bgr: np.ndarray, rx: int, ry: int, roi: np.ndarray,
+                  corr_thr: float):
+    """Best verified badge inside ``roi`` (whose top-left is (rx, ry) in frame).
+
+    Returns ``(corr, x0, y0, x1, y1)`` — the expanded box in full-frame pixels —
+    or ``None``. Shared by the corner search and the position-locked recheck.
     """
     badge = _badge_template()
-    if badge is None or badge.size == 0:
+    if badge is None or badge.size == 0 or roi.size == 0:
         return None
     h, w = frame_bgr.shape[:2]
-    rx, ry = int(w * (1 - right)), int(h * (1 - bottom))
-    roi = frame_bgr[ry:, rx:]
-    if roi.size == 0:
-        return None
-
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
     sat = hsv[:, :, 1].astype(np.float32)
     val = hsv[:, :, 2].astype(np.float32)
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    contrast = cv2.max(cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, k),
-                       cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k)).astype(np.float32)
+    contrast = _badge_contrast(gray)
 
     base = (w * 0.095) / badge.shape[1]     # badge is ~9.5% of the frame width
     cands = []                              # (corr, x, y, bw, bh, templ)
-    for mult in (0.6, 0.75, 0.9, 1.05, 1.25, 1.5):
+    for mult in _BADGE_SCALES:
         bw = int(badge.shape[1] * base * mult)
         bh = max(4, int(badge.shape[0] * base * mult))
         if bw < 20 or bw >= roi.shape[1] or bh >= roi.shape[0]:
@@ -358,10 +363,9 @@ def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float 
     for corr, bx, by, bw, bh, templ in cands:
         if corr < corr_thr:
             break
-        if not _badge_is_white_text(templ, val[by:by + bh, bx:bx + bw],
+        if not _badge_strokes_match(templ, val[by:by + bh, bx:bx + bw],
                                     sat[by:by + bh, bx:bx + bw]):
             continue
-        full = np.zeros((h, w), np.uint8)
         # Expand beyond the text to cover a translucent pill/panel some badges sit
         # on (wider margins vertically, where the pill padding is largest).
         ex, ey = int(bw * 0.12), int(bh * 1.1)
@@ -369,9 +373,104 @@ def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float 
         y0 = max(0, ry + by - ey)
         x1 = min(w, rx + bx + bw + ex)
         y1 = min(h, ry + by + bh + ey)
-        full[y0:y1, x0:x1] = 255
-        return full
+        return (corr, x0, y0, x1, y1)
     return None
+
+
+def detect_badge_box(frame_bgr: np.ndarray, right: float = 0.45, bottom: float = 0.35,
+                     corr_thr: float = 0.42):
+    """Best verified 'Gemini Notebook' badge box in the bottom-right corner.
+
+    Returns ``(corr, x0, y0, x1, y1)`` in pixels or ``None``. This is the raw
+    locator behind :func:`detect_badge_mask`; the deck pipeline also uses the
+    ``corr`` and position to build a cross-page consensus (see
+    :func:`badge_consensus_box`).
+    """
+    h, w = frame_bgr.shape[:2]
+    rx, ry = int(w * (1 - right)), int(h * (1 - bottom))
+    return _search_badge(frame_bgr, rx, ry, frame_bgr[ry:, rx:], corr_thr)
+
+
+def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float = 0.35,
+                      corr_thr: float = 0.42):
+    """Locate the fixed 'Gemini Notebook' badge by multi-scale template matching.
+
+    The badge is a constant graphic, so shape correlation finds its outline
+    regardless of slide colour, and a stroke check (``_badge_strokes_match``)
+    confirms each candidate. Matching alone was unreliable: a high threshold
+    missed the badge on dark/busy slides, while a low one fired on tables and
+    uniforms. Verifying the strokes are desaturated and high-contrast (in either
+    polarity) fixes both — it catches the badge whether it is light-on-dark or
+    dark-on-light and rejects look-alikes. Returns a full-frame 0/255 mask (badge
+    box filled) or None.
+    """
+    box = detect_badge_box(frame_bgr, right, bottom, corr_thr)
+    if box is None:
+        return None
+    _, x0, y0, x1, y1 = box
+    full = np.zeros(frame_bgr.shape[:2], np.uint8)
+    full[y0:y1, x0:x1] = 255
+    return full
+
+
+# --- Deck-wide consensus -----------------------------------------------------
+# A slide deck stamps the badge at ONE position on every page that carries it.
+# So across pages, strong matches that agree on a position are the real badge,
+# while lone matches scattered over artwork are per-slide false positives. We
+# learn the consensus position from confident detections, then re-check that
+# exact spot on every page — catching faint/low-contrast badges at the known
+# location while never inpainting a clean corner where nothing matches.
+_CONSENSUS_MIN_CORR = 0.72    # only strong, unambiguous matches vote on position
+_CONSENSUS_POS_TOL = 0.04     # frac of page: how close boxes must sit to co-cluster
+_CONSENSUS_MIN_FRAC = 0.12    # cluster must cover >= this share of pages (min 2)
+BADGE_CONSENSUS_APPLY_CORR = 0.50  # per-page corr to accept the badge AT consensus
+
+
+def badge_consensus_box(boxes, frame_w: int, frame_h: int, total_pages: int):
+    """Dominant badge box (px) across a deck, or None if no consistent stamp.
+
+    ``boxes`` is the per-page :func:`detect_badge_box` output (each ``None`` or
+    ``(corr, x0, y0, x1, y1)``). Returns the median box of the largest cluster of
+    strong, co-located detections when it covers enough pages, else ``None``.
+    """
+    strong = [b for b in boxes if b is not None and b[0] >= _CONSENSUS_MIN_CORR]
+    need = max(2, int(round(total_pages * _CONSENSUS_MIN_FRAC)))
+    if len(strong) < need or frame_w <= 0 or frame_h <= 0:
+        return None
+
+    best_cluster = []
+    for anchor in strong:                    # cluster by top-left corner position
+        ax, ay = anchor[1] / frame_w, anchor[2] / frame_h
+        members = [b for b in strong
+                   if abs(b[1] / frame_w - ax) <= _CONSENSUS_POS_TOL
+                   and abs(b[2] / frame_h - ay) <= _CONSENSUS_POS_TOL]
+        if len(members) > len(best_cluster):
+            best_cluster = members
+    if len(best_cluster) < need:
+        return None
+
+    arr = np.array([[b[1], b[2], b[3], b[4]] for b in best_cluster], dtype=float)
+    med = np.median(arr, axis=0)
+    return (int(med[0]), int(med[1]), int(med[2]), int(med[3]))
+
+
+def badge_box_at(frame_bgr: np.ndarray, consensus_box, corr_min: float = BADGE_CONSENSUS_APPLY_CORR):
+    """Re-verify the badge at a known deck ``consensus_box`` on this page.
+
+    Searches only a small window around the consensus position (not the whole
+    corner), so it applies the deck's badge stamp wherever it actually recurs and
+    stays silent on pages whose corner holds only artwork. Returns the expanded
+    box (px) if present, else ``None``.
+    """
+    if consensus_box is None:
+        return None
+    h, w = frame_bgr.shape[:2]
+    x0, y0, x1, y1 = consensus_box
+    bw, bh = max(1, x1 - x0), max(1, y1 - y0)
+    px, py = int(bw * 0.5), int(bh * 0.5)    # pad the window generously around the box
+    wx0, wy0 = max(0, x0 - px), max(0, y0 - py)
+    wx1, wy1 = min(w, x1 + px), min(h, y1 + py)
+    return _search_badge(frame_bgr, wx0, wy0, frame_bgr[wy0:wy1, wx0:wx1], corr_min)
 
 
 def votes_to_mask(votes: np.ndarray, num_samples: int, vote_ratio: float,

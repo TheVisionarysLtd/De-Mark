@@ -13,7 +13,7 @@ import numpy as np
 from . import neural, sparkle
 from .config import FEATHER_SIGMA, INPAINT_EXPAND_PX, RemovalSettings
 from .inpaint import inpaint as inpaint_region
-from .mask import detect_badge_mask, detect_core_mask, pad_mask
+from .mask import badge_box_at, detect_badge_mask, detect_core_mask, pad_mask
 from .roi import Rect, compute_manual_roi, compute_roi
 
 
@@ -57,8 +57,16 @@ def detect_roi_core(roi_bgr: np.ndarray, settings: RemovalSettings) -> np.ndarra
     return core
 
 
-def build_frame_mask(frame_bgr: np.ndarray, settings: RemovalSettings) -> np.ndarray:
-    """Return a full-frame padded uint8 mask (0/255); non-zero only in the ROI."""
+def build_frame_mask(frame_bgr: np.ndarray, settings: RemovalSettings,
+                     badge_consensus=None) -> np.ndarray:
+    """Return a full-frame padded uint8 mask (0/255); non-zero only in the ROI.
+
+    ``badge_consensus`` (a box learned across a slide deck; see
+    ``mask.badge_consensus_box``) locks badge removal to the deck's stamped
+    position: the badge is taken only where it recurs at that spot, so scattered
+    per-slide false matches on artwork are ignored. When ``None`` each frame is
+    searched independently (single images, video, or a deck with no clear stamp).
+    """
     h, w = frame_bgr.shape[:2]
 
     # Corner mode with a smart detector (the default): union the deterministic
@@ -78,9 +86,15 @@ def build_frame_mask(frame_bgr: np.ndarray, settings: RemovalSettings) -> np.nda
             predicted = neural.predict_full_mask(frame_bgr)
             if predicted is not None:
                 combined = cv2.bitwise_or(combined, predicted)
-        badge = detect_badge_mask(frame_bgr)
-        if badge is not None:
-            combined = cv2.bitwise_or(combined, badge)
+        if badge_consensus is not None:
+            vb = badge_box_at(frame_bgr, badge_consensus)
+            if vb is not None:
+                _, bx0, by0, bx1, by1 = vb
+                combined[by0:by1, bx0:bx1] = 255
+        else:
+            badge = detect_badge_mask(frame_bgr)
+            if badge is not None:
+                combined = cv2.bitwise_or(combined, badge)
         return pad_mask(combined, settings.padding_px) if combined.any() else combined
 
     # Classical corner detector (detector='classic') or manual box mode.

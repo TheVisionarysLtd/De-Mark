@@ -15,11 +15,23 @@ import cv2
 import numpy as np
 
 from .config import RemovalSettings
+from .mask import badge_consensus_box, detect_badge_box
 from .pipeline import apply_inpaint, build_frame_mask
 
 PDF_RENDER_DPI = 150  # render resolution for detection + patch
 
+# A deck this many pages or longer is scanned once to learn the badge's stamped
+# position before removal, so faint badges are caught and per-slide false matches
+# on artwork are rejected (see mask.badge_consensus_box). Shorter files are
+# processed per-page directly.
+_MIN_PAGES_FOR_CONSENSUS = 3
+
 ProgressCb = Optional[Callable[[Optional[float], str], None]]
+
+
+def _uses_auto_badge(settings: RemovalSettings) -> bool:
+    """True when the auto/neural corner detector (which finds the badge) is active."""
+    return settings.region_mode == "corner" and settings.detector in ("auto", "neural")
 
 
 def pdf_available() -> bool:
@@ -68,11 +80,30 @@ def process_pdf(input_path: str, output_path: str, settings: RemovalSettings,
     cleaned_pages = 0
     preview = None
 
+    # Pass 1 (decks only): learn where the badge is stamped across the deck so
+    # removal can be locked to that position — catching faint badges and ignoring
+    # scattered false matches on photographic slides.
+    consensus = None
+    did_scan = _uses_auto_badge(settings) and total >= _MIN_PAGES_FOR_CONSENSUS
+    if did_scan:
+        boxes, fw, fh = [], 0, 0
+        for i in range(total):
+            bgr = _page_to_bgr(doc[i], zoom)
+            fh, fw = bgr.shape[:2]
+            boxes.append(detect_badge_box(bgr))
+            if progress_cb:
+                progress_cb(0.5 * (i + 1) / total, f"Scanning page {i + 1}/{total}")
+        consensus = badge_consensus_box(boxes, fw, fh, total)
+
+    def _progress(idx: int) -> float:
+        done = (idx + 1) / total
+        return 0.5 + 0.5 * done if did_scan else done
+
     try:
         for i in range(total):
             page = doc[i]
             bgr = _page_to_bgr(page, zoom)
-            mask = build_frame_mask(bgr, settings)
+            mask = build_frame_mask(bgr, settings, badge_consensus=consensus)
 
             if mask.any():
                 filled = apply_inpaint(bgr, mask, settings)
@@ -96,7 +127,7 @@ def process_pdf(input_path: str, output_path: str, settings: RemovalSettings,
                         preview = {"before": bgr.copy(), "after": filled}
 
             if progress_cb:
-                progress_cb((i + 1) / total, f"Page {i + 1}/{total}")
+                progress_cb(_progress(i), f"Page {i + 1}/{total}")
 
         doc.save(output_path, garbage=4, deflate=True)
     finally:
