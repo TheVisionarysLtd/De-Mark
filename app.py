@@ -257,30 +257,47 @@ def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
     is_pdf = files.is_pdf(name)
     is_video = files.is_video(name)
 
-    if is_pdf:
-        st.info("**PDF:** draw the box once on this page — it's removed from the **same "
-                "spot on every page**. (Watermarks sit in the same place on each slide.)")
-    elif is_video:
-        st.info("**Video:** draw the box on this first frame — it's removed from the "
-                "same spot in **every frame**.")
+    where = "every page" if is_pdf else ("every frame" if is_video else None)
+    if where:
+        kind = "page" if is_pdf else "frame"
+        st.info(f"**{'PDF' if is_pdf else 'Video'}:** mark it once on this {kind} — it's "
+                f"removed from the **same spot in {where}**.")
+
+    # Tap works on phones AND desktops; drag is a mouse-only extra for desktop.
+    method = st.radio(
+        "How do you want to mark it?",
+        ["👆 Tap the watermark (works on phone)", "🖱️ Drag a box (desktop)"],
+        horizontal=True, key="pin_method")
+    drag = method.startswith("🖱️")
 
     zoom = st.toggle("🔍 Zoom to the bottom-right corner (easier for small marks)", value=True,
                      key="pin_zoom")
-    st.caption("**Drag a box** around the watermark (or click it), then press **Remove**. "
-               "Everything inside the box is rebuilt from the surrounding pixels.")
+    box_side = 0.14
+    if not drag:
+        box_side = st.slider("Box size", 6, 40, 14, key="pin_size",
+                             help="Size of the area removed around your tap.") / 100.0
+        st.caption("**Tap the watermark** on the image, adjust **Box size** to cover it, "
+                   "then press **Remove**.")
+    else:
+        st.caption("**Drag a box** around the watermark, then press **Remove**.")
 
     # Show either the whole frame or an enlarged bottom-right crop for precision.
     x0f, y0f = (_ZOOM_X0, _ZOOM_Y0) if zoom else (0.0, 0.0)
     view = ref[int(y0f * h):, int(x0f * w):]
-    box = ui.pinpoint_box(view, key=f"pick_{files.sha1_bytes(data)[:10]}_{int(zoom)}")
+    box = ui.pinpoint_box(view, key=f"pick_{files.sha1_bytes(data)[:10]}_{int(zoom)}_{int(drag)}",
+                          drag=drag)
     if box is None:
         return
 
-    # Map the box (fractions of the shown view) back to full-image fractions.
+    # Map the mark (fractions of the shown view) back to full-image fractions.
     cxv, cyv, bwv, bhv = box
     span_x, span_y = 1.0 - x0f, 1.0 - y0f
     cx, cy = x0f + cxv * span_x, y0f + cyv * span_y
-    bw, bh = bwv * span_x, bhv * span_y
+    if drag and bwv is not None:
+        bw, bh = bwv * span_x, bhv * span_y
+    else:                                   # tap: a square box of box_side * shorter side
+        side = box_side * min(w, h)
+        bw, bh = side / w, side / h
     manual = replace(settings, region_mode="manual", force_fill=True,
                      center_x=cx, center_y=cy, box_w=bw, box_h=bh)
 

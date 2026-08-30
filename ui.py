@@ -345,19 +345,24 @@ def picker_available() -> bool:
     return _HAS_PICKER
 
 
-def pinpoint_box(image_bgr: np.ndarray, key: str):
-    """Show ``image_bgr`` and let the user drag a box (or click) over the mark.
+def pinpoint_box(image_bgr: np.ndarray, key: str, drag: bool = False):
+    """Show ``image_bgr`` and capture where the user marked the watermark.
 
-    Returns ``(cx, cy, bw, bh)`` as fractions of the frame — ready to drop into a
-    manual ``RemovalSettings`` — or ``None`` if nothing has been selected yet.
-    A bare click becomes a sensible default-sized box centred on the point.
+    Two input styles:
+    * ``drag=False`` (default, works on **touch screens** too): a single
+      tap/click returns just the point — ``(cx, cy, None, None)``; the caller
+      draws a box of a chosen size around it.
+    * ``drag=True`` (desktop mouse): drag a rectangle — returns
+      ``(cx, cy, bw, bh)`` fractions.
+
+    All values are fractions of the shown image, or ``None`` if nothing yet.
     """
     if not _HAS_PICKER:
         return None
 
     h, w = image_bgr.shape[:2]
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    value = _image_picker(rgb, width="stretch", click_and_drag=True,
+    value = _image_picker(rgb, width="stretch", click_and_drag=drag,
                           key=key, cursor="crosshair")
     if not value:
         return None
@@ -368,23 +373,21 @@ def pinpoint_box(image_bgr: np.ndarray, key: str):
     disp_h = float(value.get("height") or h)
     sx, sy = w / disp_w, h / disp_h
 
-    if "x1" in value and "x2" in value:
+    if drag and "x1" in value and "x2" in value:
         x1, x2 = sorted((float(value["x1"]), float(value["x2"])))
         y1, y2 = sorted((float(value["y1"]), float(value["y2"])))
-    else:                                # a plain click
-        x1 = x2 = float(value.get("x", disp_w / 2))
-        y1 = y2 = float(value.get("y", disp_h / 2))
+        px1, px2 = x1 * sx, x2 * sx
+        py1, py2 = y1 * sy, y2 * sy
+        box_w = max(px2 - px1, _MIN_BOX_FRAC * w)
+        box_h = max(py2 - py1, _MIN_BOX_FRAC * h)
+        return (
+            float(np.clip((px1 + px2) / 2.0 / w, 0.0, 1.0)),
+            float(np.clip((py1 + py2) / 2.0 / h, 0.0, 1.0)),
+            float(np.clip(box_w / w, _MIN_BOX_FRAC, 1.0)),
+            float(np.clip(box_h / h, _MIN_BOX_FRAC, 1.0)),
+        )
 
-    px1, px2 = x1 * sx, x2 * sx
-    py1, py2 = y1 * sy, y2 * sy
-    box_w = max(px2 - px1, _MIN_BOX_FRAC * w)
-    box_h = max(py2 - py1, _MIN_BOX_FRAC * h)
-    cx = (px1 + px2) / 2.0
-    cy = (py1 + py2) / 2.0
-
-    return (
-        float(np.clip(cx / w, 0.0, 1.0)),
-        float(np.clip(cy / h, 0.0, 1.0)),
-        float(np.clip(box_w / w, _MIN_BOX_FRAC, 1.0)),
-        float(np.clip(box_h / h, _MIN_BOX_FRAC, 1.0)),
-    )
+    # Tap / click: just the point. The caller sizes the box.
+    px = float(value.get("x", disp_w / 2)) * sx
+    py = float(value.get("y", disp_h / 2)) * sy
+    return (float(np.clip(px / w, 0.0, 1.0)), float(np.clip(py / h, 0.0, 1.0)), None, None)
