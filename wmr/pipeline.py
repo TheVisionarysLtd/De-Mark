@@ -61,11 +61,14 @@ def build_frame_mask(frame_bgr: np.ndarray, settings: RemovalSettings) -> np.nda
     """Return a full-frame padded uint8 mask (0/255); non-zero only in the ROI."""
     h, w = frame_bgr.shape[:2]
 
-    # Corner mode: union the deterministic sparkle matcher (works on any palette)
-    # with the badge template matcher (fixed 'Gemini Notebook' logo). Either can
-    # fire; together they cover both watermark types. The learned net is opt-in
-    # ('neural') and only adds to recall. Fall back to classical if all empty.
-    if settings.region_mode == "corner":
+    # Corner mode with a smart detector (the default): union the deterministic
+    # sparkle matcher (works on any palette) with the badge template matcher
+    # (fixed 'Gemini Notebook' logo). Together they cover both watermark types.
+    # The learned net is opt-in ('neural') and only adds recall. There is NO
+    # classical fallback here: it fired on watermark-free frames (e.g. plain slides
+    # in a deck), causing false removals. If the smart pass finds nothing, nothing
+    # is removed — the user picks "Select area" for anything it misses.
+    if settings.region_mode == "corner" and settings.detector in ("auto", "neural"):
         combined = np.zeros((h, w), np.uint8)
         if _use_sparkle(settings):
             found = sparkle.locate_sparkle(frame_bgr, settings.sensitivity)
@@ -78,9 +81,9 @@ def build_frame_mask(frame_bgr: np.ndarray, settings: RemovalSettings) -> np.nda
         badge = detect_badge_mask(frame_bgr)
         if badge is not None:
             combined = cv2.bitwise_or(combined, badge)
-        if combined.any():
-            return pad_mask(combined, settings.padding_px)
+        return pad_mask(combined, settings.padding_px) if combined.any() else combined
 
+    # Classical corner detector (detector='classic') or manual box mode.
     roi = resolve_roi(w, h, settings)
     roi_bgr = frame_bgr[roi.y:roi.y1, roi.x:roi.x1]
     core = pad_mask(detect_roi_core(roi_bgr, settings), settings.padding_px)

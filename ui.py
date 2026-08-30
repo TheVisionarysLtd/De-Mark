@@ -111,15 +111,23 @@ h1,h2,h3,h4{ color:var(--text); letter-spacing:-.022em; font-weight:700; }
 [data-testid="stSidebar"] .stButton>button{
   background:rgba(255,255,255,.06); color:#E9EAF4; border:1px solid rgba(255,255,255,.12) !important; box-shadow:none; }
 
-/* ---- Segmented control (the Auto / Select-area switch) ------------------- */
-[data-testid="stSegmentedControl"]{ gap:.35rem; background:#EDEEF6; border:1px solid var(--line);
-  padding:.3rem; border-radius:16px; box-shadow:inset 0 1px 2px rgba(30,20,80,.05); }
-[data-testid="stSegmentedControl"] button{
+/* ---- Segmented control (the big Auto / Select-area switch) --------------- */
+[data-testid="stSegmentedControl"]{ width:100%; gap:.5rem; background:#EAECF5;
+  border:1px solid var(--line); padding:.45rem; border-radius:20px;
+  box-shadow:inset 0 1px 3px rgba(30,20,80,.06); }
+[data-testid="stSegmentedControl"] > div,
+[data-testid="stSegmentedControl"] [role="radiogroup"]{ width:100%; display:flex; gap:.5rem; }
+[data-testid="stSegmentedControl"] button, [data-testid="stSegmentedControl"] label{
+  flex:1 1 0 !important; min-width:0 !important; justify-content:center !important;
   border:none !important; background:transparent !important; color:var(--text2) !important;
-  font-weight:600 !important; border-radius:12px !important; padding:.5rem 1rem !important; }
+  font-weight:700 !important; font-size:1.1rem !important; border-radius:15px !important;
+  padding:.9rem 1rem !important; transition:background .15s ease, box-shadow .2s ease; }
+[data-testid="stSegmentedControl"] button p, [data-testid="stSegmentedControl"] label p{
+  font-size:1.1rem !important; font-weight:700 !important; }
 [data-testid="stSegmentedControl"] button[aria-checked="true"],
-[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"]{
-  background:#fff !important; color:var(--text) !important; box-shadow:var(--shadow-sm); }
+[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+[data-testid="stSegmentedControl"] label:has(input:checked){
+  background:#fff !important; color:var(--accent) !important; box-shadow:var(--shadow); }
 
 /* ---- Misc accents -------------------------------------------------------- */
 [data-baseweb="slider"] [role="slider"]{ background:var(--accent) !important; }
@@ -197,7 +205,7 @@ def header() -> None:
           and removes watermarks from AI-generated images, videos and PDF decks, seamlessly.</div>
           <div class="dm-chips">
             <span class="dm-chip"><b>Gemini</b> sparkle</span>
-            <span class="dm-chip"><b>NotebookLLM</b> badge</span>
+            <span class="dm-chip"><b>NotebookLM</b> badge</span>
             <span class="dm-chip">Image · Video · <b>PDF</b></span>
             <span class="dm-chip">Runs <b>locally</b></span>
           </div>

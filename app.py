@@ -43,7 +43,7 @@ def sidebar_settings() -> RemovalSettings:
     if sparkle_available():
         use_ai = st.sidebar.toggle(
             "Smart detector", value=True,
-            help="Matches the fixed Gemini sparkle glyph and NotebookLLM badge on "
+            help="Matches the fixed Gemini sparkle glyph and NotebookLM badge on "
                  "any background palette, then verifies every hit, so real marks "
                  "are removed and clean images are never touched. Turn off to fall "
                  "back to the classic contrast detector.")

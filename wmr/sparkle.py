@@ -38,9 +38,10 @@ CANON_PATH = Path(__file__).resolve().parent / "weights" / "sparkle_canon.npy"
 # place it in another corner — so all four are searched.
 SEARCH_FRAC = 0.45
 
-# The four corners as (vertical edge, horizontal edge). Bottom-right first: it is
-# by far the most common, so it wins ties.
-_CORNERS = (("bottom", "right"), ("bottom", "left"), ("top", "right"), ("top", "left"))
+# Every confirmed Gemini sparkle sits in the BOTTOM-RIGHT corner, so that is the
+# only region searched. (Searching all four corners was tried but only ever
+# produced false positives on star-shaped gaps in title text elsewhere.)
+_CORNERS = (("bottom", "right"),)
 
 # Glyph side as a fraction of the frame's shorter dimension. Real sparkles sit
 # around 0.07; the spread covers small and large exports.
@@ -54,6 +55,10 @@ CORNER_BAND = 0.22
 _MAX_CANDIDATES_PER_MAP = 3   # top matches kept per (scale, map) before NMS
 _ON_THR = 0.5                 # template alpha above this = the glyph's solid body
 _RING_LO, _RING_HI = 0.02, 0.45  # template alpha band = the immediate surround
+# The real sparkle is a bright LOCAL structure, so it lights up a top-hat filter.
+# A flat bright region (e.g. a star-shaped gap between dark title letters on a
+# light slide) has almost no top-hat response — this floor rejects those.
+_TOPHAT_MIN = 9.0             # min mean top-hat (0-255) over the glyph pixels
 
 _canon: Optional[np.ndarray] = None
 _loaded = False
@@ -144,13 +149,15 @@ def _dedupe(cands: list[_Candidate]) -> list[_Candidate]:
     return kept
 
 
-def _verify(roi_bgr: np.ndarray, cand: _Candidate, corr_min: float,
-            sat_max: float) -> bool:
+def _verify(roi_bgr: np.ndarray, tophat: np.ndarray, cand: _Candidate,
+            corr_min: float, sat_max: float) -> bool:
     """True if the candidate carries the sparkle's optical signature."""
     if cand.corr < corr_min:
         return False
-    patch = roi_bgr[cand.y:cand.y + cand.size, cand.x:cand.x + cand.size]
-    if patch.shape[:2] != (cand.size, cand.size):
+    y, x, sz = cand.y, cand.x, cand.size
+    patch = roi_bgr[y:y + sz, x:x + sz]
+    th_patch = tophat[y:y + sz, x:x + sz]
+    if patch.shape[:2] != (sz, sz) or th_patch.shape[:2] != (sz, sz):
         return False
     hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
     sat = hsv[:, :, 1].astype(np.float32)
@@ -164,7 +171,11 @@ def _verify(roi_bgr: np.ndarray, cand: _Candidate, corr_min: float,
     s_on = float(sat[on].mean())
     if s_on > sat_max:                      # covered pixels must be near-grey
         return False
-    # must stand out from its immediate surround (brighter, or greyer)
+    # Must be a bright LOCAL structure, not a flat bright patch: reject star-shaped
+    # gaps in title text / plain light backgrounds, which have ~no top-hat response.
+    if float(th_patch[on].mean()) < _TOPHAT_MIN:
+        return False
+    # ...and stand out from its immediate surround (brighter, or greyer).
     d_val = float(val[on].mean() - val[ring].mean())
     d_sat = float(sat[ring].mean() - sat[on].mean())
     return d_val >= 6.0 or d_sat >= 15.0
@@ -199,13 +210,21 @@ def _best_in_corner(frame_bgr: np.ndarray, bounds, corr_min: float,
         return None
 
     maps = _response_maps(roi)
+    # Raw top-hat (0-255) for verifying a candidate is a real bright structure,
+    # not a flat bright region. Kernel ~ a typical sparkle so the mark stands out.
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    tk = _odd(max(9, int(min(h, w) * 0.06)))
+    tophat = cv2.morphologyEx(
+        gray, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (tk, tk))
+    ).astype(np.float32)
+
     candidates = _dedupe(_collect_candidates(maps, min(h, w), roi_h, roi_w))
     for cand in candidates:               # highest correlation first
         cx = (x0 + cand.x + cand.size / 2) / w
         cy = (y0 + cand.y + cand.size / 2) / h
         if not in_corner(cx, cy):
             continue
-        if not _verify(roi, cand, corr_min, sat_max):
+        if not _verify(roi, tophat, cand, corr_min, sat_max):
             continue
         return cand.corr, x0 + cand.x, y0 + cand.y, cand.size, cand.template
     return None
@@ -231,7 +250,10 @@ def locate_sparkle(frame_bgr: np.ndarray, sensitivity: float = 0.55,
         return None
 
     sens = float(np.clip(sensitivity, 0.0, 1.0))
-    corr_min = 0.70 - 0.16 * sens          # 0.55 -> 0.61
+    # Real Gemini sparkles correlate ~0.76-0.94; incidental matches (star-shaped
+    # gaps in title text, etc.) top out around 0.70. The floor sits between them
+    # at the default and only drops for a user who deliberately raises sensitivity.
+    corr_min = 0.82 - 0.16 * sens          # 0.55 -> 0.73
     sat_max = 25.0 + 40.0 * sens           # 0.55 -> 47
 
     h, w = frame_bgr.shape[:2]

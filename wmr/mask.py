@@ -266,9 +266,13 @@ def pad_mask(mask: np.ndarray, padding_px: int) -> np.ndarray:
     return cv2.dilate(mask, kernel)
 
 
-# Real 'Gemini Notebook' badges are a grey/white pill (mean saturation <= ~25);
-# reject a shape match landing on colourful content above this.
-_BADGE_SAT_MAX = 45.0
+# The 'Gemini Notebook' badge is WHITE strokes (icon + text). Verify the matched
+# region's stroke pixels are bright, desaturated, and stand out from the local
+# background — this is background-invariant, so it catches the badge on dark,
+# busy or light slides alike, and rejects dark table text / coloured content.
+_BADGE_TEXT_V_MIN = 150.0     # strokes are white -> high value
+_BADGE_TEXT_S_MAX = 95.0      # ...and low saturation
+_BADGE_TEXT_CONTRAST = 10.0   # ...and brighter than their immediate surround
 
 _BADGE_TEMPLATE = None
 _BADGE_LOADED = False
@@ -287,17 +291,39 @@ def _badge_template():
     return _BADGE_TEMPLATE
 
 
+def _badge_is_white_text(templ: np.ndarray, box_val: np.ndarray,
+                         box_sat: np.ndarray) -> bool:
+    """True if the matched region's stroke pixels read as the white badge.
+
+    Uses the template's own high-alpha pixels (the icon + text strokes) to sample
+    the image: a real badge is bright + desaturated there and stands out from its
+    immediate surround. This holds on any background and rejects dark table text,
+    coloured artwork, or uniforms that merely share the badge's outline.
+    """
+    if box_val.shape != templ.shape or templ.max() <= 0:
+        return False
+    on = templ > 0.5 * float(templ.max())
+    if int(on.sum()) < 10:
+        return False
+    off = ~on
+    v_on = float(box_val[on].mean())
+    s_on = float(box_sat[on].mean())
+    v_off = float(box_val[off].mean()) if off.any() else v_on
+    return (v_on >= _BADGE_TEXT_V_MIN and s_on <= _BADGE_TEXT_S_MAX
+            and (v_on - v_off) >= _BADGE_TEXT_CONTRAST)
+
+
 def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float = 0.35,
-                      corr_thr: float = 0.68):
+                      corr_thr: float = 0.42):
     """Locate the fixed 'Gemini Notebook' badge by multi-scale template matching.
 
-    The badge is a constant graphic, so shape correlation finds it regardless of
-    slide colour. Returns a full-frame 0/255 mask (badge box filled) or None.
-
-    The badge is highly consistent — real badges correlate ~0.74-0.75 — so the
-    threshold sits well above incidental matches on generic card/slide text
-    (~0.63) or colourful content (~0.68), which would otherwise inpaint real
-    artwork. A saturation gate (below) adds a second, independent guard.
+    The badge is a constant white graphic, so shape correlation finds its outline
+    regardless of slide colour, and a white-stroke check (``_badge_is_white_text``)
+    confirms each candidate. Matching alone was unreliable: a high threshold
+    missed the badge on dark/busy slides, while a low one fired on tables and
+    uniforms. Verifying the strokes are actually white fixes both — it catches the
+    badge on any background and rejects look-alikes. Returns a full-frame 0/255
+    mask (badge box filled) or None.
     """
     badge = _badge_template()
     if badge is None or badge.size == 0:
@@ -309,13 +335,16 @@ def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float 
         return None
 
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    sat = hsv[:, :, 1].astype(np.float32)
+    val = hsv[:, :, 2].astype(np.float32)
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
     contrast = cv2.max(cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, k),
                        cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k)).astype(np.float32)
 
     base = (w * 0.095) / badge.shape[1]     # badge is ~9.5% of the frame width
-    best_corr, best_loc, best_size = 0.0, None, None
-    for mult in (0.7, 0.85, 1.0, 1.2, 1.45):
+    cands = []                              # (corr, x, y, bw, bh, templ)
+    for mult in (0.6, 0.75, 0.9, 1.05, 1.25, 1.5):
         bw = int(badge.shape[1] * base * mult)
         bh = max(4, int(badge.shape[0] * base * mult))
         if bw < 20 or bw >= roi.shape[1] or bh >= roi.shape[0]:
@@ -323,32 +352,26 @@ def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float 
         templ = cv2.resize(badge, (bw, bh), interpolation=cv2.INTER_AREA)
         result = cv2.matchTemplate(contrast, templ, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        if max_val > best_corr:
-            best_corr, best_loc, best_size = max_val, max_loc, (bw, bh)
+        cands.append((float(max_val), max_loc[0], max_loc[1], bw, bh, templ))
 
-    if best_loc is None or best_corr < corr_thr:
-        return None
-
-    # Saturation gate: the 'Gemini Notebook' badge is a grey/white pill, so the
-    # matched box is near-desaturated (mean S <= ~25 on real badges). A shape
-    # that correlates on *colourful* content — e.g. an army uniform (mean S ~64)
-    # — is a false positive and must be rejected, or it inpaints real artwork.
-    bx, by = best_loc
-    bw, bh = best_size
-    box_hsv = cv2.cvtColor(roi[by:by + bh, bx:bx + bw], cv2.COLOR_BGR2HSV)
-    if float(box_hsv[:, :, 1].mean()) > _BADGE_SAT_MAX:
-        return None
-
-    full = np.zeros((h, w), np.uint8)
-    # Expand beyond the text to cover a translucent pill/panel some badges sit on
-    # (wider margins vertically, where the pill padding is largest).
-    ex, ey = int(bw * 0.12), int(bh * 1.1)
-    x0 = max(0, rx + best_loc[0] - ex)
-    y0 = max(0, ry + best_loc[1] - ey)
-    x1 = min(w, rx + best_loc[0] + bw + ex)
-    y1 = min(h, ry + best_loc[1] + bh + ey)
-    full[y0:y1, x0:x1] = 255
-    return full
+    cands.sort(key=lambda c: -c[0])         # highest correlation first
+    for corr, bx, by, bw, bh, templ in cands:
+        if corr < corr_thr:
+            break
+        if not _badge_is_white_text(templ, val[by:by + bh, bx:bx + bw],
+                                    sat[by:by + bh, bx:bx + bw]):
+            continue
+        full = np.zeros((h, w), np.uint8)
+        # Expand beyond the text to cover a translucent pill/panel some badges sit
+        # on (wider margins vertically, where the pill padding is largest).
+        ex, ey = int(bw * 0.12), int(bh * 1.1)
+        x0 = max(0, rx + bx - ex)
+        y0 = max(0, ry + by - ey)
+        x1 = min(w, rx + bx + bw + ex)
+        y1 = min(h, ry + by + bh + ey)
+        full[y0:y1, x0:x1] = 255
+        return full
+    return None
 
 
 def votes_to_mask(votes: np.ndarray, num_samples: int, vote_ratio: float,
