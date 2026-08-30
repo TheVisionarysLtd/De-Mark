@@ -186,6 +186,15 @@ def inject_css() -> None:
     st.markdown(_CSS, unsafe_allow_html=True)
 
 
+def wide_mode() -> None:
+    """Widen the content area to the full window — used for the Select-area
+    picker so the image (and a tiny watermark on it) is as large as possible."""
+    st.markdown(
+        "<style>.block-container{max-width:100% !important;"
+        "padding-left:2.2rem !important;padding-right:2.2rem !important;}</style>",
+        unsafe_allow_html=True)
+
+
 def header() -> None:
     logo = _tvl_logo_b64()
     brand = ""

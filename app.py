@@ -240,33 +240,58 @@ def _reference_frame(data: bytes, name: str):
     return None
 
 
+# Corner-zoom shows the bottom-right region (where watermarks sit) so a small
+# mark is big and easy to box. These are the crop's top-left offset as fractions.
+_ZOOM_X0, _ZOOM_Y0 = 0.50, 0.50
+
 def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
-    """Let the user mark the watermark on the image, then remove exactly that box."""
+    """Let the user mark the watermark on a big image, then remove exactly that box."""
+    ui.wide_mode()                          # use the full window width for the picker
     ui.section("Point at the watermark")
-    st.caption("**Drag a box** around the watermark (or click it), then press Remove. "
-               "Everything inside the box is rebuilt from the surrounding pixels.")
 
     ref = _reference_frame(data, name)
     if ref is None:
         st.error("Couldn't load a preview to mark on.")
         return
+    h, w = ref.shape[:2]
+    is_pdf = files.is_pdf(name)
+    is_video = files.is_video(name)
 
-    box = ui.pinpoint_box(ref, key=f"pick_{files.sha1_bytes(data)[:10]}")
+    if is_pdf:
+        st.info("**PDF:** draw the box once on this page — it's removed from the **same "
+                "spot on every page**. (Watermarks sit in the same place on each slide.)")
+    elif is_video:
+        st.info("**Video:** draw the box on this first frame — it's removed from the "
+                "same spot in **every frame**.")
+
+    zoom = st.toggle("🔍 Zoom to the bottom-right corner (easier for small marks)", value=True,
+                     key="pin_zoom")
+    st.caption("**Drag a box** around the watermark (or click it), then press **Remove**. "
+               "Everything inside the box is rebuilt from the surrounding pixels.")
+
+    # Show either the whole frame or an enlarged bottom-right crop for precision.
+    x0f, y0f = (_ZOOM_X0, _ZOOM_Y0) if zoom else (0.0, 0.0)
+    view = ref[int(y0f * h):, int(x0f * w):]
+    box = ui.pinpoint_box(view, key=f"pick_{files.sha1_bytes(data)[:10]}_{int(zoom)}")
     if box is None:
         return
 
-    cx, cy, bw, bh = box
+    # Map the box (fractions of the shown view) back to full-image fractions.
+    cxv, cyv, bwv, bhv = box
+    span_x, span_y = 1.0 - x0f, 1.0 - y0f
+    cx, cy = x0f + cxv * span_x, y0f + cyv * span_y
+    bw, bh = bwv * span_x, bhv * span_y
     manual = replace(settings, region_mode="manual", force_fill=True,
                      center_x=cx, center_y=cy, box_w=bw, box_h=bh)
 
-    h, w = ref.shape[:2]
-    x0, y0 = int((cx - bw / 2) * w), int((cy - bh / 2) * h)
-    x1, y1 = int((cx + bw / 2) * w), int((cy + bh / 2) * h)
+    px0, py0 = int((cx - bw / 2) * w), int((cy - bh / 2) * h)
+    px1, py1 = int((cx + bw / 2) * w), int((cy + bh / 2) * h)
     preview = ref.copy()
-    cv2.rectangle(preview, (x0, y0), (x1, y1), (255, 90, 10), max(2, w // 300))
+    cv2.rectangle(preview, (px0, py0), (px1, py1), (255, 90, 10), max(2, w // 300))
 
     left, right = st.columns([3, 1])
-    left.image(preview, channels="BGR", use_container_width=True, caption="Selected area")
+    left.image(preview, channels="BGR", use_container_width=True,
+               caption="Selected area (shown on the full image)")
     go = right.button("Remove watermark", type="primary", use_container_width=True)
 
     go_key = (files.sha1_bytes(data), manual.cache_key())
@@ -278,9 +303,9 @@ def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
     st.write("")
     if files.is_image(name):
         render_image(data, name, manual)
-    elif files.is_video(name):
+    elif is_video:
         render_video(data, name, manual)
-    elif files.is_pdf(name):
+    elif is_pdf:
         render_pdf(data, name, manual)
 
 
