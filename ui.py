@@ -112,9 +112,9 @@ h1,h2,h3,h4{ color:var(--text); letter-spacing:-.022em; font-weight:700; }
   background:rgba(255,255,255,.06); color:#E9EAF4; border:1px solid rgba(255,255,255,.12) !important; box-shadow:none; }
 
 /* ---- Segmented control (the big Auto / Select-area switch) --------------- */
-[data-testid="stSegmentedControl"]{ width:100%; gap:.5rem; background:#EAECF5;
-  border:1px solid var(--line); padding:.45rem; border-radius:20px;
-  box-shadow:inset 0 1px 3px rgba(30,20,80,.06); }
+[data-testid="stSegmentedControl"]{ display:flex !important; width:100% !important;
+  gap:.5rem; background:#EAECF5; border:1px solid var(--line); padding:.45rem;
+  border-radius:20px; box-shadow:inset 0 1px 3px rgba(30,20,80,.06); }
 [data-testid="stSegmentedControl"] > div,
 [data-testid="stSegmentedControl"] [role="radiogroup"]{ width:100%; display:flex; gap:.5rem; }
 [data-testid="stSegmentedControl"] button, [data-testid="stSegmentedControl"] label{
