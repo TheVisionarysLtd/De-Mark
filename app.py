@@ -24,7 +24,7 @@ from wmr.pipeline import overlay_with_roi
 
 _TYPES = ["png", "jpg", "jpeg", "mp4", "mov"] + (["pdf"] if pdf_available() else [])
 
-st.set_page_config(page_title="De:Mark — AI Watermark Removal", page_icon="🩹", layout="wide")
+st.set_page_config(page_title="De:Mark · AI Watermark Removal", page_icon="🩹", layout="wide")
 ui.inject_css()
 
 SAMPLE_DIR = Path(__file__).resolve().parent / "samples"
@@ -43,8 +43,8 @@ def sidebar_settings() -> RemovalSettings:
     if sparkle_available():
         use_ai = st.sidebar.toggle(
             "Smart detector", value=True,
-            help="Matches the fixed Gemini sparkle glyph and NotebookLM badge on "
-                 "any background palette, then verifies every hit — so real marks "
+            help="Matches the fixed Gemini sparkle glyph and NotebookLLM badge on "
+                 "any background palette, then verifies every hit, so real marks "
                  "are removed and clean images are never touched. Turn off to fall "
                  "back to the classic contrast detector.")
         detector = "auto" if use_ai else "classic"
@@ -131,7 +131,7 @@ def render_video(data: bytes, name: str, settings: RemovalSettings) -> None:
             preview, mask = overlay_with_roi(frame, settings)
             st.image(preview, channels="BGR", use_container_width=True)
             if not mask.any():
-                st.caption("Nothing on this frame yet — the static mask samples the whole clip.")
+                st.caption("Nothing on this frame yet. The static mask samples the whole clip.")
     with col_b:
         ui.section("Original")
         st.video(data)
@@ -190,7 +190,7 @@ def render_pdf(data: bytes, name: str, settings: RemovalSettings) -> None:
     input_path = _ensure_pdf_input(data, name)
     out_name = f"{Path(name).stem}_demark.pdf"
 
-    st.caption("Removes the watermark from every page — the rest of each slide stays untouched.")
+    st.caption("Removes the watermark from every page; the rest of each slide stays untouched.")
     run = st.button("Remove watermarks from PDF", type="primary", use_container_width=True)
     result_key = (files.sha1_bytes(data), settings.cache_key())
 
@@ -320,7 +320,7 @@ def main() -> None:
     source = _resolve_source(uploaded)
     if source is None:
         formats = "PNG · JPG · MP4 · MOV" + (" · PDF" if pdf_available() else "")
-        st.caption(f"{formats} — processed locally, nothing is uploaded.")
+        st.caption(f"{formats}. Processed locally, nothing is uploaded.")
         _demo_controls()
         ui.footer()
         return

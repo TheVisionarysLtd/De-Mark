@@ -7,6 +7,7 @@ flow logic, and apart from wmr/ (the engine) which stays framework-agnostic.
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -23,6 +24,22 @@ ACCENT = "#0A84FF"
 
 # A bare click (no drag) expands into a box at least this fraction of the frame.
 _MIN_BOX_FRAC = 0.05
+
+# The Visionarys Ltd branding — De:Mark is built by The Visionarys.
+TVL_URL = "https://www.thevisionarys.com/"
+_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "tvl-logo.png"
+_logo_b64_cache: str | None = None
+
+
+def _tvl_logo_b64() -> str:
+    """Base64 of the Visionarys logo (embedded so it's self-contained), or ''."""
+    global _logo_b64_cache
+    if _logo_b64_cache is None:
+        try:
+            _logo_b64_cache = base64.b64encode(_LOGO_PATH.read_bytes()).decode()
+        except Exception:
+            _logo_b64_cache = ""
+    return _logo_b64_cache
 
 # --------------------------------------------------------------------------- #
 # Global stylesheet — a calm, Apple-grade light system.
@@ -128,7 +145,23 @@ hr{ border-color:var(--line); }
   color:var(--text2); margin:.2rem 0 .7rem; }
 .dm-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
   box-shadow:var(--shadow); padding:1.15rem 1.3rem; }
-.dm-foot{ color:#9DA0B5; font-size:.8rem; text-align:center; margin-top:2.6rem; }
+.dm-foot{ color:#9DA0B5; font-size:.82rem; text-align:center; margin-top:2.6rem; display:flex;
+  flex-direction:column; align-items:center; gap:.35rem; }
+.dm-foot a{ color:var(--text); text-decoration:none; font-weight:700; }
+.dm-foot a:hover{ color:var(--accent); }
+.dm-foot-brand{ display:inline-flex; align-items:center; gap:.45rem; }
+.dm-foot-brand img{ width:20px; height:20px; object-fit:contain; }
+
+/* ---- "Built by The Visionarys" brand link (top-right of the hero) -------- */
+.dm-brandby{ display:flex; justify-content:flex-end; margin:0 0 .1rem; }
+.dm-brandby a{ display:inline-flex; align-items:center; gap:.5rem; text-decoration:none;
+  background:rgba(255,255,255,.8); backdrop-filter:blur(6px); border:1px solid var(--line);
+  border-radius:999px; padding:.32rem .8rem .32rem .5rem; box-shadow:var(--shadow-sm);
+  transition:transform .12s ease, box-shadow .2s ease; }
+.dm-brandby a:hover{ transform:translateY(-1px); box-shadow:var(--shadow); }
+.dm-brandby img{ width:22px; height:22px; object-fit:contain; }
+.dm-brandby span{ font-size:.78rem; font-weight:600; color:var(--text2); }
+.dm-brandby b{ color:var(--text); }
 
 /* ---- Sidebar brand ------------------------------------------------------- */
 .dm-side-brand{ display:flex; align-items:center; gap:.6rem; margin:.2rem 0 1.4rem; }
@@ -146,16 +179,25 @@ def inject_css() -> None:
 
 
 def header() -> None:
+    logo = _tvl_logo_b64()
+    brand = ""
+    if logo:
+        brand = (
+            f'<div class="dm-brandby"><a href="{TVL_URL}" target="_blank" rel="noopener noreferrer">'
+            f'<img src="data:image/png;base64,{logo}" alt="The Visionarys Ltd logo"/>'
+            f'<span>Built by <b>The Visionarys Ltd</b></span></a></div>'
+        )
     st.markdown(
+        brand +
         """
         <div class="dm-hero">
           <div class="dm-tag">AI Watermark Removal Engine</div>
           <div class="dm-logo">De<span class="c">:</span>Mark</div>
           <div class="dm-desc">A lightweight, open-source computer-vision tool that detects
-          and removes watermarks from AI-generated images, videos and PDF decks — seamlessly.</div>
+          and removes watermarks from AI-generated images, videos and PDF decks, seamlessly.</div>
           <div class="dm-chips">
             <span class="dm-chip"><b>Gemini</b> sparkle</span>
-            <span class="dm-chip"><b>NotebookLM</b> badge</span>
+            <span class="dm-chip"><b>NotebookLLM</b> badge</span>
             <span class="dm-chip">Image · Video · <b>PDF</b></span>
             <span class="dm-chip">Runs <b>locally</b></span>
           </div>
@@ -198,9 +240,16 @@ def section(label: str) -> None:
 
 
 def footer() -> None:
+    logo = _tvl_logo_b64()
+    logo_img = f'<img src="data:image/png;base64,{logo}" alt=""/>' if logo else ""
     st.markdown(
-        "<div class='dm-foot'>De:Mark · runs entirely on your machine · "
-        "open-source computer vision</div>", unsafe_allow_html=True)
+        f'<div class="dm-foot">'
+        f'<a class="dm-foot-brand" href="{TVL_URL}" target="_blank" rel="noopener noreferrer">'
+        f'{logo_img}Built by The Visionarys Ltd</a>'
+        f'<div>De:Mark · runs entirely on your machine · '
+        f'<a href="{TVL_URL}" target="_blank" rel="noopener noreferrer">thevisionarys.com</a></div>'
+        f'</div>',
+        unsafe_allow_html=True)
 
 
 def _b64_jpeg(bgr: np.ndarray, quality: int = 92) -> str:
