@@ -1,0 +1,31 @@
+# --- Core (required) ---------------------------------------------------------
+streamlit>=1.28
+numpy>=1.24
+Pillow>=10.0
+imageio-ffmpeg>=0.4.9          # bundles an ffmpeg binary — no system install needed
+
+# OpenCV: either wheel works. Headless is recommended for servers / this app
+# (no GUI needed). If you already have opencv-python installed, that is fine too.
+opencv-python-headless>=4.8
+
+# PDF slide-deck support (render + rebuild). Optional: the app enables the PDF
+# option only when this is importable.
+PyMuPDF>=1.23
+
+# Visual manual override: drag/click a box on the image to mark the watermark
+# when auto-detection misses. Optional — the app falls back to numeric sliders
+# if it is not installed.
+streamlit-image-coordinates>=0.4
+
+# --- torch: enables the AI sparkle DETECTOR and LaMa inpainting -------------
+# torch powers two things: (1) the neural sparkle detector (weights ship in
+# wmr/weights/, ~2 MB) that finds the mark on busy backgrounds, and (2) LaMa
+# inpainting for seamless, palette-adapting fills. Both fall back gracefully if
+# torch is absent (classical detector + OpenCV fill).
+#
+# Install it in two steps (do NOT add these as plain requirements — the wrapper
+# pins an old numpy that tries to build from source and fails):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu   # ~124 MB CPU build
+#   pip install --no-deps simple-lama-inpainting
+# The LaMa model (~200 MB) downloads automatically on first use.
+# (Works on Python 3.14: torch 2.13.0 ships a cp314 wheel.)

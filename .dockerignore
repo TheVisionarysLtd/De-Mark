@@ -1,0 +1,24 @@
+# Keep the image small and clean — none of this is needed at runtime.
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Dev-only ML training scripts + large intermediate assets (weights in
+# wmr/weights/ are kept — they are NOT under dev/).
+dev/
+
+# Sample outputs and any stray media
+samples/output/
+*.mp4
+*.mov
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+node_modules/

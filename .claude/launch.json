@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "watermark-remover",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m", "streamlit", "run", "app.py",
+        "--server.port", "8501",
+        "--server.headless", "true",
+        "--server.maxUploadSize", "2048",
+        "--browser.gatherUsageStats", "false"
+      ],
+      "port": 8501
+    }
+  ]
+}
