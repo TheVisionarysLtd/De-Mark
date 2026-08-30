@@ -362,8 +362,15 @@ def pinpoint_box(image_bgr: np.ndarray, key: str, drag: bool = False):
 
     h, w = image_bgr.shape[:2]
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    value = _image_picker(rgb, width="stretch", click_and_drag=drag,
-                          key=key, cursor="crosshair")
+    # Use the long-standing `use_column_width` API (stable across component and
+    # Streamlit versions). The newer `width=`/`cursor=` kwargs are avoided — they
+    # can raise on some deployed Streamlit builds. Fall back to a minimal call if
+    # even this signature isn't accepted, so the app never hard-crashes.
+    try:
+        value = _image_picker(rgb, use_column_width="always",
+                              click_and_drag=drag, key=key)
+    except TypeError:
+        value = _image_picker(rgb, key=key)
     if not value:
         return None
 

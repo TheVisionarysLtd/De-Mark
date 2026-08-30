@@ -284,8 +284,13 @@ def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
     # Show either the whole frame or an enlarged bottom-right crop for precision.
     x0f, y0f = (_ZOOM_X0, _ZOOM_Y0) if zoom else (0.0, 0.0)
     view = ref[int(y0f * h):, int(x0f * w):]
-    box = ui.pinpoint_box(view, key=f"pick_{files.sha1_bytes(data)[:10]}_{int(zoom)}_{int(drag)}",
-                          drag=drag)
+    try:
+        box = ui.pinpoint_box(view, key=f"pick_{files.sha1_bytes(data)[:10]}_{int(zoom)}_{int(drag)}",
+                              drag=drag)
+    except Exception:
+        st.warning("The visual picker couldn't load here. Please use **✨ Auto detect** above, "
+                   "or reload the page — and you can send us the file below so we can look into it.")
+        return
     if box is None:
         return
 
