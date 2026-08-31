@@ -378,13 +378,21 @@ def _search_badge(frame_bgr: np.ndarray, rx: int, ry: int, roi: np.ndarray,
 
 
 def detect_badge_box(frame_bgr: np.ndarray, right: float = 0.45, bottom: float = 0.35,
-                     corr_thr: float = 0.42):
+                     corr_thr: float = 0.63):
     """Best verified 'Gemini Notebook' badge box in the bottom-right corner.
 
     Returns ``(corr, x0, y0, x1, y1)`` in pixels or ``None``. This is the raw
     locator behind :func:`detect_badge_mask`; the deck pipeline also uses the
     ``corr`` and position to build a cross-page consensus (see
     :func:`badge_consensus_box`).
+
+    ``corr_thr`` defaults to a CONSERVATIVE 0.63: a real badge correlates ~0.68+
+    (0.78+ on clean panels), while incidental matches on textured artwork — e.g. a
+    painted balustrade or repeated ornament — top out around 0.59. On a lone image
+    there is no cross-page consensus to fall back on, so the bar is set to avoid
+    inpainting real art; anything fainter is left for Manual "Select area". The
+    deck scan passes this same value but decides removal by position consensus,
+    which re-checks each page at a looser 0.50 (see :func:`badge_box_at`).
     """
     h, w = frame_bgr.shape[:2]
     rx, ry = int(w * (1 - right)), int(h * (1 - bottom))
@@ -392,7 +400,7 @@ def detect_badge_box(frame_bgr: np.ndarray, right: float = 0.45, bottom: float =
 
 
 def detect_badge_mask(frame_bgr: np.ndarray, right: float = 0.45, bottom: float = 0.35,
-                      corr_thr: float = 0.42):
+                      corr_thr: float = 0.63):
     """Locate the fixed 'Gemini Notebook' badge by multi-scale template matching.
 
     The badge is a constant graphic, so shape correlation finds its outline
