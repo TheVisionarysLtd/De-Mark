@@ -7,6 +7,7 @@ flow logic, and apart from wmr/ (the engine) which stays framework-agnostic.
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 
 import cv2
@@ -370,8 +371,19 @@ def image_compare(before_bgr: np.ndarray, after_bgr: np.ndarray) -> None:
 # Visual watermark picker — DRAG a box (desktop). Sliders are the always-on path.
 # --------------------------------------------------------------------------- #
 def canvas_available() -> bool:
-    """True if the drag-a-box canvas component is installed (else sliders only)."""
-    return _HAS_CANVAS
+    """True if the drag-a-box canvas is installed AND enabled for this deployment.
+
+    The canvas component (streamlit-drawable-canvas) renders its image background
+    on a self-hosted server (local / VPS) but NOT on Streamlit Community Cloud's
+    proxied iframe — there the background is fetched yet never drawn, so the canvas
+    comes up blank, which is worse than offering no drag at all. Drag is therefore
+    opt-in per deployment via the DEMARK_ENABLE_DRAG env var (set in the Docker /
+    VPS environment); the hosted free tier leaves it unset and shows the always-
+    reliable sliders, which work on phone, desktop, and cloud alike.
+    """
+    if not _HAS_CANVAS:
+        return False
+    return os.environ.get("DEMARK_ENABLE_DRAG", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def draw_box(image_bgr: np.ndarray, key: str, max_width: int = 680):

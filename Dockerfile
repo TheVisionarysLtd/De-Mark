@@ -12,7 +12,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_SERVER_MAX_UPLOAD_SIZE=2048 \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    DEMARK_ENABLE_DRAG=1
+
+# DEMARK_ENABLE_DRAG=1 turns on the desktop "Draw a box" canvas in Manual mode.
+# It is enabled here because a self-hosted server renders the drawing canvas
+# correctly; it is left OFF on Streamlit Community Cloud, whose proxied iframe
+# shows the canvas background blank (the always-reliable sliders are used there).
 
 # Runtime libs OpenCV/torch need. ffmpeg is bundled by imageio-ffmpeg, so no
 # system ffmpeg is required. curl is only for the healthcheck.
