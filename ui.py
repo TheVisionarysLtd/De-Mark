@@ -76,26 +76,39 @@ def _tvl_logo_b64() -> str:
 # --------------------------------------------------------------------------- #
 _CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root{
-  --surface:#FFFFFF; --text:#14152A; --text2:#6B6F86;
-  --line:#ECECF4; --accent:#6C5CE7; --accent2:#3B82F6; --radius:22px;
-  --grad:linear-gradient(135deg,#6C5CE7 0%,#3B82F6 100%);
-  --shadow:0 1px 2px rgba(23,20,70,.05), 0 20px 50px rgba(40,30,100,.10);
-  --shadow-sm:0 1px 2px rgba(23,20,70,.05), 0 8px 24px rgba(40,30,100,.07);
+  --surface:#FFFFFF; --glass:rgba(255,255,255,.72); --glass-2:rgba(255,255,255,.5);
+  --text:#0E0F24; --text2:#565A76; --text3:#8B90A9;
+  --line:#E7E8F3; --radius:24px;
+  --accent:#6D5EF6; --accent2:#3B82F6; --accent3:#22D3EE;
+  --grad:linear-gradient(115deg,#6D5EF6 0%,#3B82F6 52%,#22D3EE 100%);
+  --shadow:0 2px 4px rgba(20,18,60,.04), 0 26px 60px -16px rgba(60,50,140,.22);
+  --shadow-sm:0 1px 2px rgba(20,18,60,.05), 0 10px 30px -12px rgba(60,50,140,.16);
+  --shadow-glow:0 16px 38px -10px rgba(109,94,246,.48);
 }
 html, body, [class*="css"], .stApp, button, input, textarea, select{
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif !important;
-  -webkit-font-smoothing:antialiased;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
 }
 .stApp{ background:
-  radial-gradient(1200px 600px at 6% -12%, rgba(108,92,231,.20), transparent 55%),
-  radial-gradient(1000px 560px at 110% -8%, rgba(59,130,246,.16), transparent 52%),
-  linear-gradient(180deg,#F7F8FD 0%, #EEF0F8 100%); }
+  radial-gradient(1100px 620px at 3% -14%, rgba(109,94,246,.26), transparent 58%),
+  radial-gradient(1000px 560px at 104% -8%, rgba(59,130,246,.20), transparent 55%),
+  radial-gradient(820px 560px at 62% 120%, rgba(34,211,238,.15), transparent 60%),
+  radial-gradient(680px 460px at 92% 44%, rgba(244,114,182,.10), transparent 55%),
+  linear-gradient(180deg,#FAFBFF 0%, #F0F1F9 100%);
+  background-attachment:fixed; }
+/* fine grain so the gradient reads as a surface, not a flat wash */
+.stApp::before{ content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.55;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E"); }
+[data-testid="stAppViewContainer"]>*{ position:relative; z-index:1; }
 #MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"]{ display:none !important; }
-.block-container{ padding-top:2.2rem; padding-bottom:4rem; max-width:1120px; }
-h1,h2,h3,h4{ color:var(--text); letter-spacing:-.022em; font-weight:700; }
+.block-container{ padding-top:1.5rem; padding-bottom:4.5rem; max-width:1080px; }
+h1,h2,h3,h4{ color:var(--text); letter-spacing:-.024em; font-weight:700; }
+@keyframes dmUp{ from{opacity:0; transform:translateY(16px);} to{opacity:1; transform:none;} }
+@keyframes dmFloat{ 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(26px,-18px) scale(1.08);} }
+@keyframes dmShine{ to{ background-position:200% center; } }
 
 /* ---- Dark premium sidebar ------------------------------------------------ */
 [data-testid="stSidebar"]{
@@ -116,13 +129,14 @@ h1,h2,h3,h4{ color:var(--text); letter-spacing:-.022em; font-weight:700; }
 [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] [data-testid="stTickBar"]{ background:transparent; }
 
 /* ---- File uploader ------------------------------------------------------- */
-[data-testid="stFileUploaderDropzone"]{
-  border:1.5px dashed #C4C6DA; border-radius:var(--radius);
-  background:linear-gradient(180deg,#FFFFFF, #FBFBFE);
-  padding:2.6rem 1.5rem; box-shadow:var(--shadow);
+[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"]{
+  border:1.5px dashed #C9CBE0; border-radius:var(--radius);
+  background:var(--glass); backdrop-filter:blur(12px);
+  padding:2.8rem 1.6rem; box-shadow:var(--shadow);
   transition:border-color .25s ease, box-shadow .25s ease, transform .2s ease; }
-[data-testid="stFileUploaderDropzone"]:hover{
-  border-color:var(--accent); box-shadow:0 16px 46px rgba(108,92,231,.18); transform:translateY(-1px); }
+[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"]:hover{
+  border-color:var(--accent); box-shadow:var(--shadow-glow); transform:translateY(-2px); }
+[data-testid="stFileUploaderDropzoneInstructions"] span, [data-testid="stFileUploaderDropzone"] small{ color:var(--text3) !important; }
 [data-testid="stFileUploaderDropzone"] button{
   background:var(--grad) !important; color:#fff !important; border:none !important;
   border-radius:980px !important; padding:.5rem 1.3rem !important; font-weight:600 !important;
@@ -167,47 +181,107 @@ h1,h2,h3,h4{ color:var(--text); letter-spacing:-.022em; font-weight:700; }
 [data-testid="stImage"] img{ border-radius:16px; }
 hr{ border-color:var(--line); }
 
+/* ---- De:Mark top bar ----------------------------------------------------- */
+.dm-top{ display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  margin:.1rem 0 1.7rem; animation:dmUp .5s ease both; }
+.dm-word{ font-family:'Space Grotesk',Inter,sans-serif; font-size:1.5rem; font-weight:700;
+  letter-spacing:-.03em; color:var(--text); }
+.dm-word .dm-colon{ background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
 /* ---- De:Mark hero -------------------------------------------------------- */
-.dm-hero{ display:flex; flex-direction:column; gap:.6rem; margin:.1rem 0 1.4rem; }
-.dm-logo{ font-size:3.1rem; font-weight:900; letter-spacing:-.045em; color:var(--text); line-height:1; }
-.dm-logo .c{ background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
-.dm-tag{ font-size:.74rem; font-weight:800; letter-spacing:.2em; text-transform:uppercase;
-  background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
-.dm-desc{ font-size:1.04rem; color:var(--text2); max-width:660px; line-height:1.55; }
-.dm-chips{ display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.35rem; }
-.dm-chip{ font-size:.76rem; font-weight:600; color:var(--text2); background:rgba(255,255,255,.75);
-  backdrop-filter:blur(6px); border:1px solid var(--line); padding:.3rem .75rem; border-radius:999px;
-  box-shadow:var(--shadow-sm); }
+.dm-hero{ position:relative; display:flex; flex-direction:row; align-items:center;
+  gap:2.6rem; margin:.3rem 0 2.2rem; animation:dmUp .7s ease both; }
+.dm-hero-text{ flex:1 1 500px; min-width:0; display:flex; flex-direction:column;
+  align-items:flex-start; gap:1.05rem; }
+.dm-hero-visual{ flex:0 1 360px; }
+@media (max-width:920px){ .dm-hero{ flex-direction:column; align-items:flex-start; }
+  .dm-hero-visual{ width:100%; max-width:440px; } }
+.dm-aurora{ position:absolute; top:-140px; left:-90px; width:480px; height:360px; z-index:-1;
+  background:conic-gradient(from 120deg at 50% 50%, rgba(109,94,246,.5), rgba(59,130,246,.42),
+    rgba(34,211,238,.42), rgba(244,114,182,.36), rgba(109,94,246,.5));
+  filter:blur(72px); opacity:.6; border-radius:50%; animation:dmFloat 16s ease-in-out infinite; }
+
+/* before/after product preview card (pure CSS, evokes the real slider) */
+.dm-shot{ border-radius:20px; overflow:hidden; background:#fff; border:1px solid var(--line);
+  box-shadow:var(--shadow); transform:rotate(1.4deg); transition:transform .45s ease; }
+.dm-shot:hover{ transform:rotate(0deg) translateY(-4px); }
+.dm-shot-bar{ display:flex; align-items:center; gap:.4rem; padding:.6rem .85rem;
+  background:#F7F8FC; border-bottom:1px solid var(--line); }
+.dm-shot-bar b{ width:9px; height:9px; border-radius:50%; background:#E2E4EF; }
+.dm-shot-bar em{ margin-left:auto; font-style:normal; font-weight:700; font-size:.72rem;
+  color:var(--text3); font-family:'Space Grotesk',sans-serif; }
+.dm-shot-img{ position:relative; height:236px; overflow:hidden;
+  background:conic-gradient(from 25deg at 55% 45%,#f0abfc,#a5b4fc,#5eead4,#fde68a,#fca5a5,#f0abfc); }
+.dm-shot-wm{ position:absolute; left:50%; bottom:44px; transform:translateX(-50%);
+  width:34px; height:34px; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:1.55rem; text-shadow:0 2px 8px rgba(0,0,0,.3); }
+.dm-shot-pill{ position:absolute; left:50%; bottom:12px; transform:translateX(-50%);
+  display:inline-flex; align-items:center; gap:.3rem; white-space:nowrap;
+  font-size:.62rem; font-weight:600; color:#fff; background:rgba(20,20,30,.38);
+  backdrop-filter:blur(3px); border-radius:8px; padding:.2rem .5rem; }
+/* the clean (After) half is drawn OVER the mark to erase it on the right side */
+.dm-shot-clean{ position:absolute; inset:0; clip-path:inset(0 0 0 50%);
+  background:conic-gradient(from 25deg at 55% 45%,#f0abfc,#a5b4fc,#5eead4,#fde68a,#fca5a5,#f0abfc); }
+.dm-shot-div{ position:absolute; top:0; bottom:0; left:50%; width:2px; background:rgba(255,255,255,.92);
+  box-shadow:0 0 0 1px rgba(0,0,0,.04); }
+.dm-shot-div i{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:28px; height:28px; border-radius:50%; background:#fff; box-shadow:var(--shadow-sm);
+  display:flex; align-items:center; justify-content:center; color:var(--text3); font-size:.7rem; font-style:normal; }
+.dm-shot-tags{ display:flex; justify-content:space-between; padding:.55rem .85rem;
+  font-size:.68rem; font-weight:700; color:var(--text3); letter-spacing:.04em; }
+.dm-shot-tags b{ color:var(--accent2); }
+.dm-badge{ display:inline-flex; align-items:center; gap:.5rem; font-size:.8rem; font-weight:600;
+  color:var(--text2); background:var(--glass); backdrop-filter:blur(10px); border:1px solid var(--line);
+  border-radius:999px; padding:.42rem .95rem; box-shadow:var(--shadow-sm); }
+.dm-badge i{ font-style:normal; font-size:.95rem; background:var(--grad);
+  -webkit-background-clip:text; background-clip:text; color:transparent; }
+.dm-h1{ font-family:'Space Grotesk',Inter,sans-serif; font-size:clamp(2.5rem,6vw,3.85rem);
+  font-weight:700; line-height:1.03; letter-spacing:-.035em; color:var(--text); margin:0; }
+.dm-h1 .dm-grad{ background:linear-gradient(115deg,#6D5EF6,#3B82F6 42%,#22D3EE 72%,#6D5EF6);
+  background-size:200% auto; -webkit-background-clip:text; background-clip:text; color:transparent;
+  animation:dmShine 6s linear infinite; }
+.dm-sub{ font-size:1.1rem; color:var(--text2); max-width:640px; line-height:1.55; margin:0; }
+.dm-sub b{ color:var(--text); font-weight:600; }
+.dm-chips{ display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.25rem; }
+.dm-chip{ display:inline-flex; align-items:center; gap:.5rem; font-size:.8rem; font-weight:600;
+  color:var(--text2); background:var(--glass); backdrop-filter:blur(8px); border:1px solid var(--line);
+  padding:.42rem .85rem; border-radius:999px; box-shadow:var(--shadow-sm);
+  transition:transform .16s ease, box-shadow .22s ease; }
+.dm-chip:hover{ transform:translateY(-2px); box-shadow:var(--shadow); }
 .dm-chip b{ color:var(--text); }
+.dm-chip .dot{ width:8px; height:8px; border-radius:50%; box-shadow:0 0 0 3px rgba(109,94,246,.10); }
+.dm-chip .dot.v{ background:#6D5EF6; } .dm-chip .dot.b{ background:#3B82F6; }
+.dm-chip .dot.c{ background:#22D3EE; } .dm-chip .dot.g{ background:#34D399; }
 .dm-section{ font-size:.72rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase;
-  color:var(--text2); margin:.2rem 0 .7rem; }
-.dm-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-  box-shadow:var(--shadow); padding:1.15rem 1.3rem; }
-.dm-foot{ color:#9DA0B5; font-size:.82rem; text-align:center; margin-top:2.6rem; display:flex;
-  flex-direction:column; align-items:center; gap:.35rem; }
+  color:var(--text3); margin:1.1rem 0 .7rem; }
+.dm-card{ background:var(--glass); backdrop-filter:blur(12px); border:1px solid var(--line);
+  border-radius:var(--radius); box-shadow:var(--shadow); padding:1.2rem 1.35rem; }
+.dm-foot{ color:var(--text3); font-size:.82rem; text-align:center; margin-top:3rem; display:flex;
+  flex-direction:column; align-items:center; gap:.4rem; }
 .dm-foot a{ color:var(--text); text-decoration:none; font-weight:700; }
 .dm-foot a:hover{ color:var(--accent); }
-.dm-foot-brand{ display:inline-flex; align-items:center; gap:.45rem; }
+.dm-foot-brand{ display:inline-flex; align-items:center; gap:.5rem; }
 .dm-foot-brand img{ width:20px; height:20px; object-fit:contain; }
 
-/* ---- "Built by The Visionarys" brand link (top-right of the hero) -------- */
-.dm-brandby{ display:flex; justify-content:flex-end; margin:0 0 .1rem; }
-.dm-brandby a{ display:inline-flex; align-items:center; gap:.5rem; text-decoration:none;
-  background:rgba(255,255,255,.8); backdrop-filter:blur(6px); border:1px solid var(--line);
-  border-radius:999px; padding:.32rem .8rem .32rem .5rem; box-shadow:var(--shadow-sm);
-  transition:transform .12s ease, box-shadow .2s ease; }
+/* ---- "Built by The Visionarys" brand link (top-right) ------------------- */
+.dm-brandby a{ display:inline-flex; align-items:center; gap:.55rem; text-decoration:none;
+  background:var(--glass); backdrop-filter:blur(10px); border:1px solid var(--line);
+  border-radius:999px; padding:.34rem .9rem .34rem .5rem; box-shadow:var(--shadow-sm);
+  transition:transform .14s ease, box-shadow .22s ease; }
 .dm-brandby a:hover{ transform:translateY(-1px); box-shadow:var(--shadow); }
-.dm-brandby img{ width:22px; height:22px; object-fit:contain; }
-.dm-brandby span{ font-size:.78rem; font-weight:600; color:var(--text2); }
-.dm-brandby b{ color:var(--text); }
+.dm-brandby img{ width:24px; height:24px; object-fit:contain; border-radius:7px; }
+.dm-brandby span{ font-size:.8rem; font-weight:500; color:var(--text2); }
+.dm-brandby b{ color:var(--text); font-weight:600; }
 
 /* ---- Sidebar brand ------------------------------------------------------- */
 .dm-side-brand{ display:flex; align-items:center; gap:.6rem; margin:.2rem 0 1.4rem; }
-.dm-side-badge{ width:38px; height:38px; border-radius:12px; background:var(--grad);
-  display:flex; align-items:center; justify-content:center; color:#fff; font-weight:900; font-size:1.1rem;
-  box-shadow:0 8px 20px rgba(76,60,200,.4); }
-.dm-side-name{ font-size:1.15rem; font-weight:800; letter-spacing:-.02em; color:#F3F4FB; }
-.dm-side-name .c{ color:#8AA0FF; }
+.dm-side-badge{ width:40px; height:40px; border-radius:13px; background:var(--grad);
+  display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:1.15rem;
+  font-family:'Space Grotesk',sans-serif; box-shadow:var(--shadow-glow); }
+.dm-side-name{ font-family:'Space Grotesk',sans-serif; font-size:1.2rem; font-weight:700;
+  letter-spacing:-.02em; color:#F3F4FB; }
+.dm-side-name .c{ background:linear-gradient(115deg,#8AA0FF,#22D3EE);
+  -webkit-background-clip:text; background-clip:text; color:transparent; }
 </style>
 """
 
@@ -235,18 +309,37 @@ def header() -> None:
             f'<span>Built by <b>The Visionarys Ltd</b></span></a></div>'
         )
     st.markdown(
-        brand +
-        """
+        f"""
+        <div class="dm-top">
+          <div class="dm-word">De<span class="dm-colon">:</span>Mark</div>
+          {brand}
+        </div>
         <div class="dm-hero">
-          <div class="dm-tag">AI Watermark Removal Engine</div>
-          <div class="dm-logo">De<span class="c">:</span>Mark</div>
-          <div class="dm-desc">A lightweight, open-source computer-vision tool that detects
-          and removes watermarks from AI-generated images, videos and PDF decks, seamlessly.</div>
-          <div class="dm-chips">
-            <span class="dm-chip"><b>Gemini</b> sparkle</span>
-            <span class="dm-chip"><b>NotebookLM</b> badge</span>
-            <span class="dm-chip">Image · Video · <b>PDF</b></span>
-            <span class="dm-chip">Runs <b>locally</b></span>
+          <div class="dm-aurora"></div>
+          <div class="dm-hero-text">
+            <span class="dm-badge"><i>✦</i> Open-source · 100% private · runs on your machine</span>
+            <div class="dm-h1">Erase AI watermarks.<br><span class="dm-grad">Keep every pixel.</span></div>
+            <div class="dm-sub">De:Mark detects and removes the <b>Gemini</b> sparkle and the
+            <b>NotebookLM</b> badge from your images, videos and PDF decks. It works on any
+            background, and nothing ever leaves your device.</div>
+            <div class="dm-chips">
+              <span class="dm-chip"><span class="dot v"></span><b>Gemini</b> sparkle</span>
+              <span class="dm-chip"><span class="dot b"></span><b>NotebookLM</b> badge</span>
+              <span class="dm-chip"><span class="dot c"></span>Image · Video · <b>PDF</b></span>
+              <span class="dm-chip"><span class="dot g"></span>Runs <b>locally</b></span>
+            </div>
+          </div>
+          <div class="dm-hero-visual">
+            <div class="dm-shot">
+              <div class="dm-shot-bar"><b></b><b></b><b></b><em>De:Mark</em></div>
+              <div class="dm-shot-img">
+                <div class="dm-shot-wm">✦</div>
+                <div class="dm-shot-pill">✦ Gemini Notebook</div>
+                <div class="dm-shot-clean"></div>
+                <div class="dm-shot-div"><i>‹›</i></div>
+              </div>
+              <div class="dm-shot-tags"><span>Before</span><b>After ✓</b></div>
+            </div>
           </div>
         </div>
         """,
