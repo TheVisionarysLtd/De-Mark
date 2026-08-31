@@ -12,10 +12,10 @@ opencv-python-headless>=4.8
 # option only when this is importable.
 PyMuPDF>=1.23
 
-# Visual manual override: drag/click a box on the image to mark the watermark
-# when auto-detection misses. Optional — the app falls back to numeric sliders
-# if it is not installed.
-streamlit-image-coordinates>=0.4
+# Visual manual override: DRAG a box on the image to mark the watermark (desktop)
+# when auto-detection misses. Optional — the app falls back to the always-on
+# sliders if it is not installed.
+streamlit-drawable-canvas>=0.9.3
 
 # --- torch: enables the AI sparkle DETECTOR and LaMa inpainting -------------
 # torch powers two things: (1) the neural sparkle detector (weights ship in

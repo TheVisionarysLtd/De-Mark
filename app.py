@@ -279,21 +279,39 @@ def render_pinpoint(data: bytes, name: str, settings: RemovalSettings) -> None:
         st.info(f"**{'PDF' if is_pdf else 'Video'}:** mark it once on this {kind} — it's "
                 f"removed from the **same spot in {where}**.")
 
-    st.caption("Move the box over the watermark with the sliders — the **red box** in the "
-               "preview is exactly what gets removed — then press **Remove**. Works on phone "
-               "and desktop. (Watermarks are usually in the bottom-right, the default here.)")
+    # Two ways to mark: DRAG a box (desktop, if the canvas component loaded) or the
+    # SLIDERS (always available — and the reliable path on phones / touch screens).
+    use_draw = False
+    if ui.canvas_available():
+        method = st.radio("How do you want to mark it?",
+                          ["🎚️ Sliders (phone + desktop)", "✏️ Draw a box (desktop)"],
+                          horizontal=True, key="pin_method")
+        use_draw = method.startswith("✏️")
 
-    zoom = st.toggle("🔍 Zoom to the bottom-right corner", value=True, key="pin_zoom")
-    c1, c2, c3 = st.columns(3)
-    px = c1.slider("◀ Left · Right ▶", 0, 100, 92, key="pin_x") / 100.0
-    py = c2.slider("▲ Up · Down ▼", 0, 100, 93, key="pin_y") / 100.0
-    size = c3.slider("Box size", 4, 50, 14, key="pin_size") / 100.0
-
-    side = size * min(w, h)
-    cx, cy, bw, bh = px, py, side / w, side / h
-
-    st.image(_preview_with_box(ref, cx, cy, bw, bh, zoom), channels="BGR",
-             use_container_width=True, caption="Red box = area that will be removed")
+    if use_draw:
+        st.caption("**Drag** a rectangle over the watermark on the image below, then press "
+                   "**Remove**. The last box you draw is what gets removed. "
+                   "(On a phone, switch to **Sliders**.)")
+        box = ui.draw_box(ref, key="pin_canvas")
+        if box is None:
+            st.info("Draw a box over the watermark above to continue.")
+            return
+        cx, cy, bw, bh = box
+        st.image(_preview_with_box(ref, cx, cy, bw, bh, False), channels="BGR",
+                 use_container_width=True, caption="Red box = area that will be removed")
+    else:
+        st.caption("Move the box over the watermark with the sliders — the **red box** in the "
+                   "preview is exactly what gets removed — then press **Remove**. Works on phone "
+                   "and desktop. (Watermarks are usually in the bottom-right, the default here.)")
+        zoom = st.toggle("🔍 Zoom to the bottom-right corner", value=True, key="pin_zoom")
+        c1, c2, c3 = st.columns(3)
+        px = c1.slider("◀ Left · Right ▶", 0, 100, 92, key="pin_x") / 100.0
+        py = c2.slider("▲ Up · Down ▼", 0, 100, 93, key="pin_y") / 100.0
+        size = c3.slider("Box size", 4, 50, 14, key="pin_size") / 100.0
+        side = size * min(w, h)
+        cx, cy, bw, bh = px, py, side / w, side / h
+        st.image(_preview_with_box(ref, cx, cy, bw, bh, zoom), channels="BGR",
+                 use_container_width=True, caption="Red box = area that will be removed")
 
     manual = replace(settings, region_mode="manual", force_fill=True,
                      center_x=cx, center_y=cy, box_w=bw, box_h=bh)

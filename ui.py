@@ -15,10 +15,39 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 try:
-    from streamlit_image_coordinates import streamlit_image_coordinates as _image_picker
-    _HAS_PICKER = True
+    from PIL import Image as _PILImage
+    from streamlit_drawable_canvas import st_canvas as _st_canvas
+    _HAS_CANVAS = True
 except Exception:                       # optional dependency — degrade to sliders
-    _HAS_PICKER = False
+    _HAS_CANVAS = False
+
+# streamlit-drawable-canvas 0.9.3 calls streamlit.elements.image.image_to_url to
+# serve the canvas background. Newer Streamlit (>=1.x) MOVED that helper to
+# streamlit.elements.lib.image_utils and changed its 2nd argument (int width ->
+# LayoutConfig), so the old call raises AttributeError and the canvas never
+# renders (the same version rot that broke the previous drag component). Bridge
+# the old call site to the real, relocated helper — it registers the image with
+# Streamlit's media manager and returns a /media/ URL the component can fetch, so
+# the background shows and drag-to-box works. Local and Streamlit Cloud run the
+# same Streamlit, so verifying locally covers the cloud. If the internal API
+# shifts again, fall back to sliders-only rather than offering a broken canvas.
+if _HAS_CANVAS:
+    try:
+        import streamlit.elements.image as _st_image_mod
+
+        if not hasattr(_st_image_mod, "image_to_url"):
+            from streamlit.elements.lib.image_utils import WidthBehavior as _WB
+            from streamlit.elements.lib.image_utils import image_to_url as _real_img_to_url
+            from streamlit.elements.lib.layout_utils import LayoutConfig as _LayoutConfig
+
+            def _image_to_url(image, width=None, clamp=False, channels="RGB",
+                              output_format="PNG", image_id="", **_kw):
+                return _real_img_to_url(image, _LayoutConfig(width=_WB.ORIGINAL),
+                                        clamp, channels, output_format, image_id)
+
+            _st_image_mod.image_to_url = _image_to_url
+    except Exception:
+        _HAS_CANVAS = False       # can't bridge on this Streamlit -> sliders only
 
 ACCENT = "#0A84FF"
 
@@ -338,63 +367,60 @@ def image_compare(before_bgr: np.ndarray, after_bgr: np.ndarray) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Visual watermark picker — the manual override
+# Visual watermark picker — DRAG a box (desktop). Sliders are the always-on path.
 # --------------------------------------------------------------------------- #
-def picker_available() -> bool:
-    """True if the interactive image component is installed (else use sliders)."""
-    return _HAS_PICKER
+def canvas_available() -> bool:
+    """True if the drag-a-box canvas component is installed (else sliders only)."""
+    return _HAS_CANVAS
 
 
-def pinpoint_box(image_bgr: np.ndarray, key: str, drag: bool = False):
-    """Show ``image_bgr`` and capture where the user marked the watermark.
+def draw_box(image_bgr: np.ndarray, key: str, max_width: int = 680):
+    """Let the user DRAG a rectangle over the image to mark the watermark.
 
-    Two input styles:
-    * ``drag=False`` (default, works on **touch screens** too): a single
-      tap/click returns just the point — ``(cx, cy, None, None)``; the caller
-      draws a box of a chosen size around it.
-    * ``drag=True`` (desktop mouse): drag a rectangle — returns
-      ``(cx, cy, bw, bh)`` fractions.
-
-    All values are fractions of the shown image, or ``None`` if nothing yet.
+    Desktop / mouse oriented (phones stay on the sliders). Returns the most
+    recently drawn rectangle as ``(cx, cy, bw, bh)`` fractions of the image, or
+    ``None`` if nothing has been drawn yet. Degrades to ``None`` (caller shows
+    sliders) if the optional canvas component is unavailable.
     """
-    if not _HAS_PICKER:
+    if not _HAS_CANVAS:
         return None
 
     h, w = image_bgr.shape[:2]
+    disp_w = min(max_width, w)
+    disp_h = max(1, int(round(disp_w * h / w)))
     rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    # Use the long-standing `use_column_width` API (stable across component and
-    # Streamlit versions). The newer `width=`/`cursor=` kwargs are avoided — they
-    # can raise on some deployed Streamlit builds. Fall back to a minimal call if
-    # even this signature isn't accepted, so the app never hard-crashes.
+    bg = _PILImage.fromarray(cv2.resize(rgb, (disp_w, disp_h), interpolation=cv2.INTER_AREA))
+
     try:
-        value = _image_picker(rgb, use_column_width="always",
-                              click_and_drag=drag, key=key)
-    except TypeError:
-        value = _image_picker(rgb, key=key)
-    if not value:
+        result = _st_canvas(
+            fill_color="rgba(255, 90, 10, 0.25)",     # translucent orange fill
+            stroke_color="#FF5A0A",
+            stroke_width=2,
+            background_image=bg,
+            update_streamlit=True,
+            height=disp_h,
+            width=disp_w,
+            drawing_mode="rect",
+            key=key,
+        )
+    except Exception:
+        return None                                   # canvas failed -> caller keeps sliders
+    if result is None or result.json_data is None:
+        return None
+    rects = [o for o in result.json_data.get("objects", []) if o.get("type") == "rect"]
+    if not rects:
         return None
 
-    # Coordinates come back in *displayed* pixels; scale to full resolution using
-    # the displayed dimensions the component reports alongside them.
-    disp_w = float(value.get("width") or w)
-    disp_h = float(value.get("height") or h)
-    sx, sy = w / disp_w, h / disp_h
-
-    if drag and "x1" in value and "x2" in value:
-        x1, x2 = sorted((float(value["x1"]), float(value["x2"])))
-        y1, y2 = sorted((float(value["y1"]), float(value["y2"])))
-        px1, px2 = x1 * sx, x2 * sx
-        py1, py2 = y1 * sy, y2 * sy
-        box_w = max(px2 - px1, _MIN_BOX_FRAC * w)
-        box_h = max(py2 - py1, _MIN_BOX_FRAC * h)
-        return (
-            float(np.clip((px1 + px2) / 2.0 / w, 0.0, 1.0)),
-            float(np.clip((py1 + py2) / 2.0 / h, 0.0, 1.0)),
-            float(np.clip(box_w / w, _MIN_BOX_FRAC, 1.0)),
-            float(np.clip(box_h / h, _MIN_BOX_FRAC, 1.0)),
-        )
-
-    # Tap / click: just the point. The caller sizes the box.
-    px = float(value.get("x", disp_w / 2)) * sx
-    py = float(value.get("y", disp_h / 2)) * sy
-    return (float(np.clip(px / w, 0.0, 1.0)), float(np.clip(py / h, 0.0, 1.0)), None, None)
+    o = rects[-1]                                  # the most recent box wins
+    rw = float(o.get("width", 0)) * float(o.get("scaleX", 1))
+    rh = float(o.get("height", 0)) * float(o.get("scaleY", 1))
+    if rw < 2 or rh < 2:                            # a stray click, not a box
+        return None
+    cx = (float(o.get("left", 0)) + rw / 2) / disp_w
+    cy = (float(o.get("top", 0)) + rh / 2) / disp_h
+    return (
+        float(np.clip(cx, 0.0, 1.0)),
+        float(np.clip(cy, 0.0, 1.0)),
+        float(np.clip(rw / disp_w, _MIN_BOX_FRAC, 1.0)),
+        float(np.clip(rh / disp_h, _MIN_BOX_FRAC, 1.0)),
+    )
