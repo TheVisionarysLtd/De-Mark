@@ -15,7 +15,11 @@ ROI_BOTTOM_FRACTION = 0.16  # bottom 16% of the height (marks often sit >12% up)
 ROI_RIGHT_FRACTION = 0.28   # rightmost 28% of the width
 
 # --- Mask detection ----------------------------------------------------------
-DEFAULT_SENSITIVITY = 0.55   # 0..1 — higher captures fainter / lower-contrast marks
+DEFAULT_SENSITIVITY = 0.78   # 0..1 — higher captures fainter / lower-contrast marks.
+# Raised 0.55 -> 0.78 (30 Aug 2026): a faint Gemini sparkle over a dark, busy background
+# (a Pichwai painting) matched at corr 0.71 / saturation 55 — just past the 0.55 gates —
+# so auto-detect wrongly said "nothing". 0.78 catches it with margin and was verified to
+# add NO false positives (business card, ornate art, and 21 deck pages all stay clean).
 DEFAULT_PADDING_PX = 8       # dilation halo so inpainting overshoots the mark edge
 MIN_TOPHAT_KERNEL = 7        # smallest morphological kernel (px), keeps tiny ROIs sane
 TOPHAT_KERNEL_RATIO = 0.45   # kernel size as a fraction of the smaller ROI dimension
