@@ -143,7 +143,14 @@ def apply_inpaint(frame_bgr: np.ndarray, full_mask: np.ndarray,
 
 
 def process_frame(frame_bgr: np.ndarray, settings: RemovalSettings):
-    """Detect + inpaint in one call. Returns (cleaned_frame, full_mask)."""
+    """Detect + inpaint in one call. Returns (cleaned_frame, full_mask).
+
+    NOTE: un-blend removal (``sparkle.unblend_sparkle``) is intentionally NOT wired
+    in as the default — without Gemini's exact watermark alpha it is unreliable
+    (great on some images, over-removes into a dark-star artifact on others), so it
+    would regress cleanly-inpainted cases. It stays available for when the exact
+    per-format fingerprint is extracted from clean before/after pairs.
+    """
     mask = build_frame_mask(frame_bgr, settings)
     cleaned = apply_inpaint(frame_bgr, mask, settings)
     return cleaned, mask

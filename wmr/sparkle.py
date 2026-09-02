@@ -272,3 +272,90 @@ def locate_sparkle(frame_bgr: np.ndarray, sensitivity: float = 0.55,
     mask[ay:ay + size, ax:ax + size][stamp > 0] = 255
     grow = _odd(max(3, int(size * grow_frac)))
     return cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (grow, grow)))
+
+
+# --- Un-blend removal --------------------------------------------------------
+# The Gemini sparkle is a SEMI-TRANSPARENT white glyph composited over the image
+# (obs = a*255 + (1-a)*orig). So instead of inpainting (which paints a guess and
+# smears busy backgrounds), we can RECOVER the original pixels by inverting the
+# blend: orig = (obs - a*255) / (1 - a). That keeps the real detail that sat under
+# the mark — the clean result you get from a purpose-built Gemini remover. We use
+# the canonical glyph as the alpha shape and estimate the per-image opacity so the
+# un-blended core blends into its surroundings (opacity shifts by output format).
+_UNBLEND_MAX_RESIDUAL = 0.32   # if the un-blend still matches the star shape above
+#                                this, it ghosted/over-removed -> inpaint instead.
+
+
+def unblend_sparkle(frame_bgr: np.ndarray, sensitivity: float = 0.78,
+                    grow: float = 1.15):
+    """Recover the pixels under the sparkle. Returns (new_frame, box or None).
+
+    ``box`` is ``(x, y, size)`` of the region touched (for the caller's mask /
+    "changed" signal); ``None`` means no sparkle was found and the frame is
+    returned unchanged.
+    """
+    canon = _load_canon()
+    if canon is None or frame_bgr.size == 0:
+        return frame_bgr, None
+    h, w = frame_bgr.shape[:2]
+    sens = float(np.clip(sensitivity, 0.0, 1.0))
+    hit = _best_in_corner(frame_bgr, _corner_window(h, w, "bottom", "right"),
+                          0.82 - 0.16 * sens, 25.0 + 40.0 * sens)
+    if hit is None:
+        return frame_bgr, None
+
+    _, ax, ay, size, _ = hit
+    sz = int(round(size * grow))
+    ox = max(0, ax + (size - sz) // 2)
+    oy = max(0, ay + (size - sz) // 2)
+    sz = min(sz, w - ox, h - oy)
+    if sz < 8:
+        return frame_bgr, None
+
+    a = cv2.resize(canon, (sz, sz), interpolation=cv2.INTER_CUBIC)
+    a = cv2.GaussianBlur(a, (0, 0), max(0.5, sz * 0.02))
+    amax = float(a.max()) or 1.0
+    core = a > 0.5 * amax
+
+    # surrounding-ring median (box excluded) — the target the core should blend into
+    pad = max(4, sz // 4)
+    ry0, rx0 = max(0, oy - pad), max(0, ox - pad)
+    ry1, rx1 = min(h, oy + sz + pad), min(w, ox + sz + pad)
+    ring_region = frame_bgr[ry0:ry1, rx0:rx1]
+    keep = np.ones(ring_region.shape[:2], bool)
+    keep[oy - ry0:oy - ry0 + sz, ox - rx0:ox - rx0 + sz] = False
+    ring_med = np.median(ring_region[keep].reshape(-1, 3).astype(np.float32), axis=0)
+
+    reg = frame_bgr[oy:oy + sz, ox:ox + sz].astype(np.float32)
+    best_k, best_err = 0.5, 1e18
+    for k in np.arange(0.35, 0.851, 0.05):
+        al = np.clip(a * k, 0.0, 0.92)[..., None]
+        ub = np.clip((reg - al * 255.0) / (1.0 - al), 0.0, 255.0)
+        cm = np.median(ub[core], axis=0)
+        err = float(np.abs(cm - ring_med).sum())
+        if err < best_err:
+            best_err, best_k = err, float(k)
+
+    al = np.clip(a * best_k, 0.0, 0.92)[..., None]
+    ub = np.clip((reg - al * 255.0) / (1.0 - al), 0.0, 255.0).astype(np.uint8)
+
+    # SAFETY: un-blending only wins when it actually erases the star. Without
+    # Gemini's exact alpha, a wrong opacity can leave a ghost or over-subtract into
+    # a dark star. Measure how much the result still matches the sparkle SHAPE; if
+    # a sparkle-shaped pattern remains, fall back to inpainting the box so the
+    # output is never worse than the old behaviour.
+    ub_gray = cv2.cvtColor(ub, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    af = a.astype(np.float32) - float(a.mean())
+    gz = ub_gray - float(ub_gray.mean())
+    denom = (float(np.linalg.norm(af)) * float(np.linalg.norm(gz))) or 1.0
+    residual = abs(float((af * gz).sum() / denom))
+
+    if residual < _UNBLEND_MAX_RESIDUAL:
+        out = frame_bgr.copy()
+        out[oy:oy + sz, ox:ox + sz] = ub          # clean recovery — keep it
+    else:
+        m = np.zeros((h, w), np.uint8)
+        m[oy:oy + sz, ox:ox + sz] = ((a > 0.12).astype(np.uint8) * 255)
+        m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
+        out = cv2.inpaint(frame_bgr, m, 4, cv2.INPAINT_TELEA)
+    return out, (ox, oy, sz)
